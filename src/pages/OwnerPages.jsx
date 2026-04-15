@@ -1,42 +1,270 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../lib/AppContext'
-import { LAYOUT_PRESETS, AMENITY_PRESETS } from '../lib/constants'
-import { e, fmtDate, initials, toast, AmenityInput } from '../components/shared'
+import { LAYOUT_PRESETS } from '../lib/constants'
+import { fmtDate, toast, AmenityInput } from '../components/shared'
 
-// ── OWNER DASHBOARD ────────────────────────────────────────────
+const newFloor = index => ({
+  id: `f-${Date.now()}-${index}`,
+  name: index === 0 ? 'Ground Floor' : `Floor ${index + 1}`,
+  rooms: [newRoom(0)],
+})
+
+function newRoom(index) {
+  return {
+    id: `r-${Date.now()}-${index}`,
+    name: index === 0 ? 'Main Hall' : `Room ${index + 1}`,
+    cols: 20,
+    rows: 14,
+    px: 5 + (index % 3) * 32,
+    py: 10 + Math.floor(index / 3) * 42,
+    pw: 28,
+    ph: 36,
+    seats: [],
+  }
+}
+
+const clone = value => JSON.parse(JSON.stringify(value))
+
+const autoLabelSeats = seats => {
+  const byRow = {}
+  seats.forEach(seat => { (byRow[seat.r] = byRow[seat.r] || []).push(seat) })
+  Object.keys(byRow).sort((a, b) => Number(a) - Number(b)).forEach((rowKey, rowIndex) => {
+    const rowLabel = rowIndex < 26 ? String.fromCharCode(65 + rowIndex) : `R${rowIndex + 1}`
+    byRow[rowKey].sort((a, b) => a.c - b.c).forEach((seat, seatIndex) => {
+      seat.label = `${rowLabel}${seatIndex + 1}`
+    })
+  })
+  return seats
+}
+
+const createPresetSeats = (preset, cols = 20) => {
+  const nextSeats = []
+  let gridRow = 0
+  preset.rows.forEach((rowDef, rowIndex) => {
+    if (preset.paired && rowIndex > 0 && rowIndex % 2 === 0) gridRow += 1
+    const gap = rowDef.gap || 0
+    let col = Math.max(0, Math.floor((cols - rowDef.count - (gap > 0 ? 2 : 0)) / 2))
+    for (let seatIndex = 1; seatIndex <= rowDef.count; seatIndex += 1) {
+      if (gap > 0 && seatIndex === gap + 1) col += 2
+      nextSeats.push({ r: gridRow, c: col, label: '?', status: 'available' })
+      col += 1
+    }
+    gridRow += 1
+  })
+  return autoLabelSeats(nextSeats)
+}
+
+const roomSeatCount = floors => floors.reduce((sum, floor) => sum + floor.rooms.reduce((roomSum, room) => roomSum + room.seats.length, 0), 0)
+
+function RoomPlan({ floors, activeFloor, activeRoom, onSelectRoom, onChange }) {
+  const planRef = useRef(null)
+  const dragState = useRef(null)
+  const floor = floors[activeFloor]
+
+  useEffect(() => {
+    const onMove = ev => {
+      if (!dragState.current || !planRef.current) return
+      const state = dragState.current
+      const planRect = planRef.current.getBoundingClientRect()
+      const dx = ((ev.clientX - state.startX) / planRect.width) * 100
+      const dy = ((ev.clientY - state.startY) / planRect.height) * 100
+      onChange(draft => {
+        const room = draft[activeFloor].rooms[state.roomIndex]
+        if (!room) return
+        if (state.type === 'move') {
+          room.px = Math.max(0, Math.min(92, state.orig.px + dx))
+          room.py = Math.max(0, Math.min(82, state.orig.py + dy))
+        } else {
+          room.pw = Math.max(12, Math.min(80, state.orig.pw + dx))
+          room.ph = Math.max(15, Math.min(75, state.orig.ph + dy))
+        }
+      })
+    }
+    const onUp = () => { dragState.current = null }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [activeFloor, onChange])
+
+  return (
+    <div className="card" style={{ padding: 18, marginBottom: 14 }}>
+      <div className="sec-hd" style={{ marginBottom: 14 }}>
+        <div>
+          <h2 style={{ fontFamily: '"Cormorant Garamond",serif', fontSize: 18 }}>Floor Planner</h2>
+          <p style={{ color: 'var(--mutedl)', fontSize: 13, marginTop: 4 }}>Drag rooms into position to mirror the real library.</p>
+        </div>
+      </div>
+      <div className="floor-plan" ref={planRef}>
+        {floor?.rooms.map((room, roomIndex) => {
+          const isActive = roomIndex === activeRoom
+          return (
+            <button
+              key={room.id}
+              type="button"
+              className={`room-box ${isActive ? 'on' : ''}`}
+              style={{ left: `${room.px}%`, top: `${room.py}%`, width: `${room.pw}%`, height: `${room.ph}%` }}
+              onClick={() => onSelectRoom(roomIndex)}
+              onMouseDown={ev => {
+                if (ev.target.dataset.resize) return
+                dragState.current = {
+                  type: 'move',
+                  roomIndex,
+                  startX: ev.clientX,
+                  startY: ev.clientY,
+                  orig: { px: room.px, py: room.py },
+                }
+              }}
+            >
+              <div className="room-box-name">{room.name}</div>
+              <div className="room-box-meta">{room.seats.length} seats</div>
+              <span
+                className="room-resize"
+                data-resize="1"
+                onMouseDown={ev => {
+                  ev.stopPropagation()
+                  dragState.current = {
+                    type: 'resize',
+                    roomIndex,
+                    startX: ev.clientX,
+                    startY: ev.clientY,
+                    orig: { pw: room.pw, ph: room.ph },
+                  }
+                }}
+              />
+            </button>
+          )
+        })}
+      </div>
+      <p style={{ color: 'var(--mutedl)', fontSize: 12, marginTop: 10 }}>Click a room to edit its seat map, then save all floors together.</p>
+    </div>
+  )
+}
+
+function SeatGrid({ room, tool, onChange }) {
+  const [dragFrom, setDragFrom] = useState(null)
+  const seatMap = useMemo(() => {
+    const map = new Map()
+    room.seats.forEach(seat => map.set(`${seat.r},${seat.c}`, seat))
+    return map
+  }, [room.seats])
+
+  const mutate = updater => {
+    const seats = clone(room.seats)
+    updater(seats)
+    autoLabelSeats(seats)
+    onChange(seats)
+  }
+
+  const clickCell = (r, c) => {
+    mutate(seats => {
+      const index = seats.findIndex(seat => seat.r === r && seat.c === c)
+      if (tool === 'erase') {
+        if (index >= 0) seats.splice(index, 1)
+        return
+      }
+      if (index >= 0) {
+        seats[index].status = seats[index].status === 'maintenance' ? 'available' : 'maintenance'
+      } else {
+        seats.push({ r, c, label: '?', status: 'available' })
+      }
+    })
+  }
+
+  return (
+    <div className={`sge-canvas-wrap tool-${tool}`}>
+      <div className="sge-grid" style={{ gridTemplateColumns: `repeat(${room.cols},38px)` }}>
+        {Array.from({ length: room.rows }, (_, r) =>
+          Array.from({ length: room.cols }, (_, c) => {
+            const seat = seatMap.get(`${r},${c}`)
+            if (!seat) {
+              return (
+                <div
+                  key={`${r}-${c}`}
+                  className="sgc empty"
+                  onClick={() => tool !== 'move' && clickCell(r, c)}
+                  onMouseUp={() => {
+                    if (tool !== 'move' || !dragFrom) return
+                    mutate(seats => {
+                      const dragged = seats.find(item => item.r === dragFrom.r && item.c === dragFrom.c)
+                      if (dragged) {
+                        dragged.r = r
+                        dragged.c = c
+                      }
+                    })
+                    setDragFrom(null)
+                  }}
+                />
+              )
+            }
+            return (
+              <div
+                key={`${r}-${c}`}
+                className={`sgc ${seat.status === 'maintenance' ? 'seat-mt' : 'seat-av'} ${dragFrom?.r === r && dragFrom?.c === c ? 'seat-drag' : ''}`}
+                onMouseDown={() => {
+                  if (tool === 'move') setDragFrom({ r, c })
+                }}
+                onMouseUp={() => {
+                  if (tool === 'move' && dragFrom && (dragFrom.r !== r || dragFrom.c !== c)) {
+                    mutate(seats => {
+                      const dragged = seats.find(item => item.r === dragFrom.r && item.c === dragFrom.c)
+                      const target = seats.find(item => item.r === r && item.c === c)
+                      if (dragged && target) {
+                        const next = { r: dragged.r, c: dragged.c }
+                        dragged.r = target.r
+                        dragged.c = target.c
+                        target.r = next.r
+                        target.c = next.c
+                      }
+                    })
+                  } else if (tool !== 'move') {
+                    clickCell(r, c)
+                  }
+                  setDragFrom(null)
+                }}
+                onClick={() => tool !== 'move' && clickCell(r, c)}
+              >
+                {seat.label}
+              </div>
+            )
+          }),
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function OwnerDash() {
-  const { S, set, go, fetchOwnerData } = useApp()
+  const { S, set, go } = useApp()
   if (S.loading) return <div className="container"><div className="loader"><div className="spinner" /><p>Loading dashboard...</p></div></div>
   if (!S.ownerLibrary) return <EditLibrary />
 
-  const lib = S.ownerLibrary, bks = S.ownerBookings, td = new Date().toISOString().split('T')[0]
+  const lib = S.ownerLibrary
+  const bks = S.ownerBookings
+  const td = new Date().toISOString().split('T')[0]
   const todayBks = bks.filter(b => b.booking_date === td && b.status === 'confirmed')
-  const todayRev = todayBks.reduce((a, b) => a + b.total_amount, 0)
-  const totalRev = bks.filter(b => b.status === 'confirmed').reduce((a, b) => a + b.total_amount, 0)
+  const todayRev = todayBks.reduce((sum, booking) => sum + booking.total_amount, 0)
+  const totalRev = bks.filter(b => b.status === 'confirmed').reduce((sum, booking) => sum + booking.total_amount, 0)
   const bookedIds = todayBks.flatMap(b => b.seat_ids || [])
   const occPct = S.ownerSeats.length ? Math.round((bookedIds.length / S.ownerSeats.length) * 100) : 0
   const last7 = [...Array(7)].map((_, i) => {
-    const d = new Date(); d.setDate(d.getDate() - 6 + i)
-    const ds = d.toISOString().split('T')[0]
-    const amt = bks.filter(b => b.booking_date === ds && b.status === 'confirmed').reduce((a, b) => a + b.total_amount, 0)
-    return { ds, day: d.toLocaleDateString('en-IN', { weekday: 'short' }), amt, isToday: ds === td }
+    const date = new Date()
+    date.setDate(date.getDate() - 6 + i)
+    const ds = date.toISOString().split('T')[0]
+    const amt = bks.filter(booking => booking.booking_date === ds && booking.status === 'confirmed').reduce((sum, booking) => sum + booking.total_amount, 0)
+    return { ds, day: date.toLocaleDateString('en-IN', { weekday: 'short' }), amt, isToday: ds === td }
   })
-  const maxRev = Math.max(...last7.map(d => d.amt), 1)
-  const weekTotal = last7.reduce((a, d) => a + d.amt, 0)
+  const maxRev = Math.max(...last7.map(day => day.amt), 1)
+  const weekTotal = last7.reduce((sum, day) => sum + day.amt, 0)
 
-  const rows = [...new Set(S.ownerSeats.map(s => s.row_label))].sort()
-  const seatMapHTML = rows.map(row => {
-    const rs = S.ownerSeats.filter(s => s.row_label === row).sort((a, b) => a.seat_number - b.seat_number)
-    return (
-      <div key={row} style={{ display: 'flex', gap: 5, alignItems: 'center', marginBottom: 6 }}>
-        <span style={{ color: 'var(--muted)', fontSize: 12, width: 20, textAlign: 'center', flexShrink: 0, fontWeight: 700 }}>{row}</span>
-        {rs.map(s => {
-          const isB = bookedIds.includes(s.id), isM = s.status === 'maintenance'
-          return <div key={s.id} style={{ width: 30, height: 30, borderRadius: 6, fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, background: isM ? '#e8d8c8' : isB ? '#FDDDD8' : '#DCF5EE', color: isM ? '#7a5040' : isB ? '#9A2020' : '#0A6B52' }} title={`${row}${s.seat_number}: ${isM?'Maintenance':isB?'Booked':'Free'}`}>{s.seat_number}</div>
-        })}
-      </div>
-    )
-  })
+  const groupedSeats = S.ownerSeats.reduce((map, seat) => {
+    const key = `${seat.floor_name || 'Floor'}::${seat.room_name || 'Room'}`
+    if (!map[key]) map[key] = []
+    map[key].push(seat)
+    return map
+  }, {})
 
   return (
     <div className="container">
@@ -47,82 +275,106 @@ export function OwnerDash() {
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button className="btn-ghost-sm" onClick={() => {
-            set({ gridFloors: null, editorPreset: null, gridDrag: null, activeFloor: 0, activeRoom: 0 })
+            set({ gridFloors: clone(lib.floors_config || [newFloor(0)]), editorPreset: null, activeFloor: 0, activeRoom: 0 })
             go('seat-editor')
-          }}>🪑 Seat Editor</button>
+          }}>Seat Editor</button>
           <button className="nav-pill" onClick={() => {
             set({
               addLibAmenities: [...(lib.amenities || [])],
-              addLibPhotos: lib.photos?.length ? [...lib.photos] : ['','',''],
+              addLibPhotos: lib.photos?.length ? [...lib.photos] : ['', '', ''],
               addLibOpen: lib.hours_open || '06:00',
               addLibClose: lib.hours_close || '22:00',
               addLibShift: lib.shift_durations || (lib.shift_duration ? [lib.shift_duration] : [3]),
             })
             go('edit-library')
-          }}>✏ Edit Library</button>
+          }}>Edit Library</button>
         </div>
       </div>
 
       <div className="o-stats">
         {[
-          ['💰', '₹'+todayRev.toLocaleString('en-IN'), 'var(--red)', "Today's Revenue", todayBks.length+' bookings today'],
-          ['📅', bks.filter(b=>b.status==='confirmed').length, 'var(--green)', 'Confirmed Bookings', bks.filter(b=>b.status==='cancelled').length+' cancelled'],
-          ['💺', occPct+'%', 'var(--blue)', "Today's Occupancy", bookedIds.length+' / '+S.ownerSeats.length+' seats'],
-          ['📈', '₹'+totalRev.toLocaleString('en-IN'), 'var(--purple)', 'Total Revenue', 'All-time'],
-        ].map(([ico,val,col,lbl,sub]) => (
-          <div key={lbl} className="card ostat">
-            <div className="tr"><span style={{ fontSize: 26 }}>{ico}</span></div>
-            <div className="val" style={{ color: col }}>{val}</div>
-            <div className="lbl">{lbl}</div>
+          ['Rs ' + todayRev.toLocaleString('en-IN'), "Today's Revenue", todayBks.length + ' bookings today', 'var(--red)'],
+          [bks.filter(b => b.status === 'confirmed').length, 'Confirmed Bookings', bks.filter(b => b.status === 'cancelled').length + ' cancelled', 'var(--green)'],
+          [occPct + '%', "Today's Occupancy", bookedIds.length + ' / ' + S.ownerSeats.length + ' seats', 'var(--blue)'],
+          ['Rs ' + totalRev.toLocaleString('en-IN'), 'Total Revenue', 'All-time', 'var(--purple)'],
+        ].map(([value, label, sub, color]) => (
+          <div key={label} className="card ostat">
+            <div className="val" style={{ color }}>{value}</div>
+            <div className="lbl">{label}</div>
             <div style={{ fontSize: 12, color: 'var(--mutedl)', marginTop: 3 }}>{sub}</div>
           </div>
         ))}
       </div>
 
       <div className="tabs">
-        {[['bookings','📋 Bookings'],['seatmap','🪑 Seat Map'],['revenue','📊 Revenue']].map(([id,lbl]) => (
-          <button key={id} className={`tab ${S.ownerTab===id?'on':''}`} onClick={() => set({ ownerTab: id })}>{lbl}</button>
+        {[['bookings', 'Bookings'], ['seatmap', 'Seat Map'], ['revenue', 'Revenue']].map(([id, label]) => (
+          <button key={id} className={`tab ${S.ownerTab === id ? 'on' : ''}`} onClick={() => set({ ownerTab: id })}>{label}</button>
         ))}
       </div>
 
       {S.ownerTab === 'bookings' && (
         <div className="card" style={{ padding: 26 }}>
-          <div className="sec-hd"><h2>All Bookings</h2><span className="spill" style={{ background: 'rgba(26,168,130,.1)', color: 'var(--green)' }}>{bks.filter(b=>b.status==='confirmed').length} confirmed</span></div>
-          {!bks.length ? <div className="empty-s"><span style={{ fontSize: 52, display: 'block', marginBottom: 14 }}>📭</span><p>No bookings yet.</p></div>
-            : bks.slice(0, 20).map(b => {
-              const isT = b.booking_date === td
-              const col = b.status === 'confirmed' ? (isT ? 'var(--green)' : b.booking_date > td ? 'var(--blue)' : 'var(--mutedl)') : b.status === 'cancelled' ? 'var(--red)' : 'var(--mutedl)'
-              const lbl = b.status === 'cancelled' ? 'Cancelled' : isT && b.status === 'confirmed' ? 'Active' : b.booking_date > td ? 'Upcoming' : 'Completed'
-              return (
-                <div key={b.id} className="bk-row">
-                  <div style={{ flex: 1 }}><div className="nm">{b.student?.full_name || 'Student'}</div><div className="mt">{fmtDate(b.booking_date)} · {(b.slot_start||'').slice(0,5)}–{(b.slot_end||'').slice(0,5)} · ₹{b.total_amount}</div></div>
-                  <span className="spill" style={{ background: col+'22', color: col }}>{lbl}</span>
+          <div className="sec-hd"><h2>All Bookings</h2></div>
+          {!bks.length ? <div className="empty-s"><p>No bookings yet.</p></div> : bks.slice(0, 20).map(booking => {
+            const isToday = booking.booking_date === td
+            const color = booking.status === 'confirmed' ? (isToday ? 'var(--green)' : booking.booking_date > td ? 'var(--blue)' : 'var(--mutedl)') : 'var(--red)'
+            const label = booking.status === 'cancelled' ? 'Cancelled' : isToday ? 'Active' : booking.booking_date > td ? 'Upcoming' : 'Completed'
+            return (
+              <div key={booking.id} className="bk-row">
+                <div style={{ flex: 1 }}>
+                  <div className="nm">{booking.student?.full_name || 'Student'}</div>
+                  <div className="mt">{fmtDate(booking.booking_date)} · {(booking.slot_start || '').slice(0, 5)}-{(booking.slot_end || '').slice(0, 5)} · Rs {booking.total_amount}</div>
                 </div>
-              )
-            })}
+                <span className="spill" style={{ background: `${color}22`, color }}>{label}</span>
+              </div>
+            )
+          })}
         </div>
       )}
 
       {S.ownerTab === 'seatmap' && (
         <div className="card" style={{ padding: 26 }}>
-          <div className="sec-hd"><h2>Today's Seat Map</h2></div>
-          <div style={{ textAlign: 'center', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 9, marginBottom: 20, color: 'var(--mutedl)', fontSize: 11, letterSpacing: 3 }}>── ENTRANCE / FRONT ──</div>
-          <div style={{ overflowX: 'auto' }}>{seatMapHTML}</div>
+          <div className="sec-hd"><h2>Saved Layout</h2></div>
+          {!Object.keys(groupedSeats).length ? <p style={{ color: 'var(--mutedl)' }}>No seat layout saved yet.</p> : Object.entries(groupedSeats).map(([key, seats]) => {
+            const maxRow = Math.max(...seats.map(seat => seat.grid_r || 0)) + 1
+            const maxCol = Math.max(...seats.map(seat => seat.grid_c || 0)) + 1
+            return (
+              <div key={key} style={{ marginBottom: 22 }}>
+                <h3 style={{ fontFamily: '"Cormorant Garamond",serif', fontSize: 22, marginBottom: 10 }}>{key.replace('::', ' - ')}</h3>
+                <div className="seat-map-wrap">
+                  <div className="sg-student" style={{ gridTemplateColumns: `repeat(${maxCol},36px)` }}>
+                    {Array.from({ length: maxRow }, (_, r) =>
+                      Array.from({ length: maxCol }, (_, c) => {
+                        const seat = seats.find(item => item.grid_r === r && item.grid_c === c)
+                        if (!seat) return <div key={`${key}-${r}-${c}`} className="sgc-s empty" />
+                        const isBooked = bookedIds.includes(seat.id)
+                        const cls = seat.status === 'maintenance' ? 'mt' : isBooked ? 'bk' : 'av'
+                        return <div key={seat.id} className={`sgc-s ${cls}`}>{seat.label}</div>
+                      }),
+                    )}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
 
       {S.ownerTab === 'revenue' && (
         <div className="card" style={{ padding: 26 }}>
-          <div className="sec-hd"><h2>Revenue — Last 7 Days</h2></div>
+          <div className="sec-hd"><h2>Revenue - Last 7 Days</h2></div>
           <div className="bar-chart">
-            {last7.map(d => <div key={d.ds} className={`bar ${d.isToday?'today':''}`} style={{ height: Math.max(6, Math.round((d.amt/maxRev)*88)) }} title={`${d.day}: ₹${d.amt.toLocaleString('en-IN')}`} />)}
+            {last7.map(day => <div key={day.ds} className={`bar ${day.isToday ? 'today' : ''}`} style={{ height: Math.max(6, Math.round((day.amt / maxRev) * 88)) }} />)}
           </div>
           <div className="bar-labels">
-            {last7.map(d => <div key={d.ds} className="bar-lbl" style={{ color: d.isToday?'var(--text)':'var(--mutedl)' }}>{d.day}<br /><span style={{ color: d.isToday?'var(--red)':'var(--muted)', fontSize: 10 }}>{d.amt?'₹'+d.amt.toLocaleString('en-IN'):'—'}</span></div>)}
+            {last7.map(day => <div key={day.ds} className="bar-lbl">{day.day}<br /><span style={{ fontSize: 10 }}>Rs {day.amt.toLocaleString('en-IN')}</span></div>)}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14, marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--borders)' }}>
-            {[['₹'+weekTotal.toLocaleString('en-IN'),'This Week'],['₹'+Math.round(weekTotal/7).toLocaleString('en-IN'),'Daily Avg'],['₹'+totalRev.toLocaleString('en-IN'),'All Time']].map(([v,l]) => (
-              <div key={l} style={{ textAlign: 'center' }}><div style={{ fontFamily: '"Cormorant Garamond",serif', fontSize: 26, color: 'var(--red)' }}>{v}</div><div style={{ fontSize: 12, color: 'var(--mutedl)', marginTop: 4 }}>{l}</div></div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14, marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--borders)' }}>
+            {[['Rs ' + weekTotal.toLocaleString('en-IN'), 'This Week'], ['Rs ' + Math.round(weekTotal / 7).toLocaleString('en-IN'), 'Daily Avg'], ['Rs ' + totalRev.toLocaleString('en-IN'), 'All Time']].map(([value, label]) => (
+              <div key={label} style={{ textAlign: 'center' }}>
+                <div style={{ fontFamily: '"Cormorant Garamond",serif', fontSize: 26, color: 'var(--red)' }}>{value}</div>
+                <div style={{ fontSize: 12, color: 'var(--mutedl)', marginTop: 4 }}>{label}</div>
+              </div>
             ))}
           </div>
         </div>
@@ -131,10 +383,10 @@ export function OwnerDash() {
   )
 }
 
-// ── EDIT / ADD LIBRARY ─────────────────────────────────────────
 export function EditLibrary() {
   const { S, set, go, saveLibrary } = useApp()
-  const lib = S.ownerLibrary; const isEdit = !!lib
+  const lib = S.ownerLibrary
+  const isEdit = !!lib
   const [amenities, setAmenities] = useState(S.addLibAmenities)
   const [photos, setPhotos] = useState(S.addLibPhotos)
   const [open, setOpen] = useState(S.addLibOpen)
@@ -142,73 +394,83 @@ export function EditLibrary() {
   const [shifts, setShifts] = useState(Array.isArray(S.addLibShift) ? S.addLibShift : [S.addLibShift || 3])
   const [busy, setBusy] = useState(false)
 
-  const SHIFTS = [{h:3,lbl:'3 hrs'},{h:4,lbl:'4 hrs'},{h:6,lbl:'6 hrs'},{h:12,lbl:'12 hrs'},{h:0,lbl:'Full Day'}]
+  const editorSeatCount = roomSeatCount(S.gridFloors || [])
+  const shiftOptions = [{ h: 3, lbl: '3 hrs' }, { h: 4, lbl: '4 hrs' }, { h: 6, lbl: '6 hrs' }, { h: 12, lbl: '12 hrs' }, { h: 0, lbl: 'Full Day' }]
 
-  // Seat count from editor
-  const editorSeatCount = (S.gridFloors || []).reduce((a, fl) => a + fl.rooms.reduce((b, rm) => b + rm.seats.length, 0), 0)
-
-  const toggleShift = h => {
-    setShifts(prev => {
-      const idx = prev.indexOf(h)
-      if (idx >= 0) return prev.length > 1 ? prev.filter(x => x !== h) : prev
-      return [...prev, h]
-    })
+  const toggleShift = hours => {
+    setShifts(prev => prev.includes(hours) ? (prev.length > 1 ? prev.filter(item => item !== hours) : prev) : [...prev, hours])
   }
 
   const handleSubmit = async ev => {
     ev.preventDefault()
     setBusy(true)
-    const fd = new FormData(ev.target)
+    const fd = new FormData(ev.currentTarget)
+    const intVal = key => {
+      const value = parseInt(fd.get(key), 10)
+      return Number.isNaN(value) ? null : value
+    }
     const tag = fd.get('tag')
-    const tagColors = { PREMIUM:'#C8364A', STANDARD:'#4A90D9', BUDGET:'#2A9D8F' }
-    const intVal = k => { const v = parseInt(fd.get(k)); return isNaN(v) ? null : v }
-    const totalSeats = editorSeatCount > 0 ? editorSeatCount : (intVal('total_seats') || 0)
+    const tagColors = { PREMIUM: '#C8364A', STANDARD: '#4A90D9', BUDGET: '#2A9D8F' }
+    const floorsConfig = S.gridFloors || lib?.floors_config || [newFloor(0)]
     const data = {
-      name: fd.get('name'), tag, tag_color: tagColors[tag],
+      name: fd.get('name'),
+      tag,
+      tag_color: tagColors[tag],
       price_per_hour: intVal('price_per_hour') || 0,
-      location: fd.get('location'), total_seats: totalSeats,
-      hours: open + ' – ' + close, hours_open: open, hours_close: close,
-      shift_durations: shifts, shift_duration: shifts[0] || 3,
+      location: fd.get('location'),
+      total_seats: editorSeatCount > 0 ? editorSeatCount : (intVal('total_seats') || 0),
+      hours: `${open} - ${close}`,
+      hours_open: open,
+      hours_close: close,
+      shift_durations: shifts,
+      shift_duration: shifts[0] || 3,
       description: fd.get('description'),
       maps_url: fd.get('maps_url') || null,
-      price_monthly: intVal('price_monthly'), price_3monthly: intVal('price_3monthly'),
-      price_6monthly: intVal('price_6monthly'), price_annual: intVal('price_annual'),
-      amenities, photos: photos.filter(u => u?.trim()),
+      price_monthly: intVal('price_monthly'),
+      price_3monthly: intVal('price_3monthly'),
+      price_6monthly: intVal('price_6monthly'),
+      price_annual: intVal('price_annual'),
+      amenities,
+      photos: photos.filter(url => url?.trim()),
+      floors_config: floorsConfig,
+      seat_grid: floorsConfig[0]?.rooms?.[0]?.seats || [],
     }
     if (!data.name || !data.location || !data.price_per_hour || !data.hours_open || !data.description) {
-      toast('Please fill all required fields', 'error'); setBusy(false); return
+      toast('Please fill all required fields', 'error')
+      setBusy(false)
+      return
     }
     const ok = await saveLibrary(data)
-    if (ok) { set({ addLibAmenities: [], addLibPhotos: ['','',''] }); toast('✅ Library saved!'); go('owner-dash') }
-    else { toast('Save failed', 'error') }
+    if (ok) {
+      set({ addLibAmenities: [], addLibPhotos: ['', '', ''] })
+      toast('Library saved.')
+      go('owner-dash')
+    } else {
+      toast('Save failed', 'error')
+    }
     setBusy(false)
   }
 
   return (
     <div className="container-sm">
-      {isEdit && <button className="back-link" onClick={() => go('owner-dash')}>← Back to Dashboard</button>}
+      {isEdit && <button className="back-link" onClick={() => go('owner-dash')}>Back to Dashboard</button>}
       <h1 style={{ fontFamily: '"Cormorant Garamond",serif', fontSize: 34, marginBottom: 6 }}>{isEdit ? 'Edit Library' : 'List Your Library'}</h1>
       <p style={{ color: 'var(--mutedl)', marginBottom: 36 }}>{isEdit ? 'Update your library details and pricing.' : 'Add your space to StudySpace and start receiving bookings.'}</p>
 
       <div className="card" style={{ padding: 32 }}>
         <form onSubmit={handleSubmit}>
-
           <div className="field-section">
             <h3>Basic Information</h3>
-            <div className="form-group"><label>Library Name *</label><input name="name" className="form-input" placeholder="e.g. The Scholar's Den" defaultValue={lib?.name || ''} required /></div>
+            <div className="form-group"><label>Library Name *</label><input name="name" className="form-input" defaultValue={lib?.name || ''} required /></div>
             <div className="form-row">
-              <div className="form-group"><label>Category *</label>
-                <select name="tag" defaultValue={lib?.tag || 'STANDARD'}>
-                  {['BUDGET','STANDARD','PREMIUM'].map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
+              <div className="form-group"><label>Category *</label><select name="tag" defaultValue={lib?.tag || 'STANDARD'}>{['BUDGET', 'STANDARD', 'PREMIUM'].map(tag => <option key={tag} value={tag}>{tag}</option>)}</select></div>
               <div className="form-group">
                 <label>Total Seats</label>
-                <input name="total_seats" className="form-input" type="number" min="0" placeholder="Auto from Seat Editor" defaultValue={editorSeatCount > 0 ? editorSeatCount : (lib?.total_seats || '')} style={{ background: editorSeatCount > 0 ? 'rgba(26,168,130,.06)' : 'var(--surface)' }} />
-                <p className="form-hint">{editorSeatCount > 0 ? '✅ Auto-synced from Seat Editor' : 'Leave blank — auto-synced when you save a layout.'}</p>
+                <input name="total_seats" className="form-input" type="number" min="0" defaultValue={editorSeatCount > 0 ? editorSeatCount : (lib?.total_seats || '')} />
+                <p className="form-hint">{editorSeatCount > 0 ? 'Auto-synced from the seat editor.' : 'This will auto-sync after you save a layout.'}</p>
               </div>
             </div>
-            <div className="form-group"><label>Location / Area *</label><input name="location" className="form-input" placeholder="e.g. Hazratganj, Lucknow" defaultValue={lib?.location || ''} required /></div>
+            <div className="form-group"><label>Location / Area *</label><input name="location" className="form-input" defaultValue={lib?.location || ''} required /></div>
 
             <div className="form-group">
               <label>Opening Hours *</label>
@@ -216,64 +478,52 @@ export function EditLibrary() {
                 <div className="time-input-group"><label>Opens at</label><input type="time" value={open} onChange={ev => setOpen(ev.target.value)} required /></div>
                 <div className="time-input-group"><label>Closes at</label><input type="time" value={close} onChange={ev => setClose(ev.target.value)} required /></div>
               </div>
-              <div className="hours-preview">🕐 {open} – {close}</div>
+              <div className="hours-preview">{open} - {close}</div>
             </div>
 
             <div className="form-group">
               <label>Shift Duration *</label>
-              <p className="form-hint" style={{ marginBottom: 10 }}>Select one or more shift lengths. Students will see all selected options when booking.</p>
               <div className="shift-opts">
-                {SHIFTS.map(s => (
-                  <div key={s.h} className={`shift-opt ${shifts.includes(s.h) ? 'on' : ''}`} onClick={() => toggleShift(s.h)}>
-                    <div className="sh-dur">{shifts.includes(s.h) ? '✓' : ''}</div>
-                    <div className="sh-lbl">{s.lbl}</div>
+                {shiftOptions.map(option => (
+                  <div key={option.h} className={`shift-opt ${shifts.includes(option.h) ? 'on' : ''}`} onClick={() => toggleShift(option.h)}>
+                    <div className="sh-dur">{shifts.includes(option.h) ? 'OK' : ''}</div>
+                    <div className="sh-lbl">{option.lbl}</div>
                   </div>
                 ))}
               </div>
-              <ShiftTimeline open={open} close={close} shifts={shifts} />
             </div>
 
-            <div className="form-group">
-              <label>Google Maps Link <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(optional)</span></label>
-              <input name="maps_url" className="form-input" type="url" placeholder="https://maps.google.com/?q=..." defaultValue={lib?.maps_url || ''} />
-            </div>
+            <div className="form-group"><label>Google Maps Link</label><input name="maps_url" className="form-input" type="url" defaultValue={lib?.maps_url || ''} /></div>
           </div>
 
           <div className="field-section">
             <h3>Description</h3>
-            <div className="form-group"><label>About Your Space *</label>
-              <textarea name="description" placeholder="Describe the vibe, key facilities, and who your library is built for..." defaultValue={lib?.description || ''} required />
-              <p className="form-hint">2–4 sentences. Good descriptions consistently get more bookings.</p>
-            </div>
+            <div className="form-group"><label>About Your Space *</label><textarea name="description" defaultValue={lib?.description || ''} required /></div>
           </div>
 
           <div className="field-section">
             <h3>Pricing</h3>
-            <p style={{ color: 'var(--mutedl)', fontSize: 14, marginBottom: 20 }}>Set a per-shift price first, then optionally set subscription plans.</p>
             <div className="form-row">
-              <div className="form-group"><label>Price per Shift (₹) *</label><input name="price_per_hour" className="form-input" type="number" min="1" placeholder="e.g. 60" defaultValue={lib?.price_per_hour || ''} required /><p className="form-hint">Charged per shift booking.</p></div>
-              <div className="form-group"><label>Monthly Plan (₹)</label><input name="price_monthly" className="form-input" type="number" min="1" placeholder="e.g. 1800" defaultValue={lib?.price_monthly || ''} /></div>
+              <div className="form-group"><label>Price per Shift (Rs) *</label><input name="price_per_hour" className="form-input" type="number" min="1" defaultValue={lib?.price_per_hour || ''} required /></div>
+              <div className="form-group"><label>Monthly Plan (Rs)</label><input name="price_monthly" className="form-input" type="number" min="1" defaultValue={lib?.price_monthly || ''} /></div>
             </div>
             <div className="form-row">
-              <div className="form-group"><label>3-Month Plan (₹)</label><input name="price_3monthly" className="form-input" type="number" min="1" placeholder="e.g. 4999" defaultValue={lib?.price_3monthly || ''} /></div>
-              <div className="form-group"><label>6-Month Plan (₹)</label><input name="price_6monthly" className="form-input" type="number" min="1" placeholder="e.g. 8999" defaultValue={lib?.price_6monthly || ''} /></div>
+              <div className="form-group"><label>3-Month Plan (Rs)</label><input name="price_3monthly" className="form-input" type="number" min="1" defaultValue={lib?.price_3monthly || ''} /></div>
+              <div className="form-group"><label>6-Month Plan (Rs)</label><input name="price_6monthly" className="form-input" type="number" min="1" defaultValue={lib?.price_6monthly || ''} /></div>
             </div>
-            <div className="form-group" style={{ maxWidth: 'calc(50% - 7px)' }}>
-              <label>Annual Plan (₹)</label><input name="price_annual" className="form-input" type="number" min="1" placeholder="e.g. 15999" defaultValue={lib?.price_annual || ''} />
-            </div>
+            <div className="form-group" style={{ maxWidth: 'calc(50% - 7px)' }}><label>Annual Plan (Rs)</label><input name="price_annual" className="form-input" type="number" min="1" defaultValue={lib?.price_annual || ''} /></div>
           </div>
 
           <div className="field-section">
-            <h3>Photos <span style={{ fontFamily: '"DM Sans",sans-serif', fontSize: 14, fontWeight: 400, color: 'var(--mutedl)' }}>(optional — up to 6)</span></h3>
-            {photos.map((url, i) => (
-              <div key={i} className="photo-row">
-                {url ? <img className="photo-preview" src={url} alt="" onError={ev => ev.target.style.opacity='.15'} />
-                  : <div className="photo-preview" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: 'var(--muted)' }}>📷</div>}
-                <input className="form-input" placeholder="Paste image URL" value={url} onChange={ev => { const p=[...photos]; p[i]=ev.target.value.trim(); setPhotos(p) }} />
-                <button type="button" className="btn-danger" style={{ width: 36, height: 36, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setPhotos(photos.filter((_, j) => j !== i))}>✕</button>
+            <h3>Photos</h3>
+            {photos.map((url, index) => (
+              <div key={index} className="photo-row">
+                {url ? <img className="photo-preview" src={url} alt="" onError={ev => { ev.currentTarget.style.opacity = '.2' }} /> : <div className="photo-preview" />}
+                <input className="form-input" value={url} onChange={ev => setPhotos(prev => prev.map((item, idx) => idx === index ? ev.target.value.trim() : item))} />
+                <button type="button" className="btn-danger" style={{ width: 36, height: 36, padding: 0 }} onClick={() => setPhotos(prev => prev.filter((_, idx) => idx !== index))}>X</button>
               </div>
             ))}
-            {photos.length < 6 && <button type="button" className="btn-ghost-sm" style={{ marginTop: 8 }} onClick={() => setPhotos([...photos, ''])}>+ Add Another Photo</button>}
+            {photos.length < 6 && <button type="button" className="btn-ghost-sm" style={{ marginTop: 8 }} onClick={() => setPhotos(prev => [...prev, ''])}>+ Add Another Photo</button>}
           </div>
 
           <div className="field-section">
@@ -281,227 +531,180 @@ export function EditLibrary() {
             <AmenityInput amenities={amenities} setAmenities={setAmenities} />
           </div>
 
-          <button className="btn-red btn-block" type="submit" disabled={busy}>{busy ? 'Saving...' : isEdit ? 'Save Changes' : 'List My Library →'}</button>
+          <button className="btn-red btn-block" type="submit" disabled={busy}>{busy ? 'Saving...' : isEdit ? 'Save Changes' : 'List My Library'}</button>
         </form>
       </div>
     </div>
   )
 }
 
-// ── SHIFT TIMELINE ─────────────────────────────────────────────
-function ShiftTimeline({ open, close, shifts }) {
-  const [oh, om] = open.split(':').map(Number)
-  const [ch, cm] = close.split(':').map(Number)
-  let openM = oh*60+(om||0), closeM = ch*60+(cm||0)
-  if (closeM <= openM) closeM += 24*60
-  const totalM = closeM - openM
-  if (!shifts.length || totalM <= 0) return null
-
-  const fmtM = m => { m=m%1440; const h=Math.floor(m/60)%24,mm=m%60; return (h<10?'0':'')+h+':'+(mm<10?'0':'')+mm }
-  const PALETTE = ['#C8364A','#2A72B5','#1AA882','#C4860A','#7B3FA0']
-  const tickCount = Math.min(Math.floor(totalM/60)+1, 13)
-
-  return (
-    <div style={{ marginTop: 18 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--mutedl)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Shift Timeline</span>
-        <span style={{ fontSize: 11, color: 'var(--muted)' }}>{open} – {close}</span>
-      </div>
-      {/* Tick row */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-        <div style={{ width: 52, flexShrink: 0 }} />
-        <div style={{ flex: 1, position: 'relative', height: 14 }}>
-          {Array.from({ length: tickCount }, (_, t) => {
-            const pct = (t * 60 / totalM) * 100
-            if (pct > 100) return null
-            const hh = (openM + t*60) % 1440
-            const lbl = (Math.floor(hh/60)<10?'0':'')+Math.floor(hh/60)+':'+(hh%60<10?'0':'')+hh%60
-            return <div key={t} style={{ position: 'absolute', left: pct+'%', transform: 'translateX(-50%)', fontSize: 9, color: 'var(--muted)', fontWeight: 600, whiteSpace: 'nowrap', top: 0 }}>{lbl}</div>
-          })}
-        </div>
-        <div style={{ width: 32, flexShrink: 0 }} />
-      </div>
-      {[...shifts].sort((a,b)=>a-b).map((dur, di) => {
-        const color = PALETTE[di % PALETTE.length]
-        const segM = dur === 0 ? totalM : dur * 60
-        const segCount = dur === 0 ? 1 : Math.floor(totalM / segM)
-        const remPct = ((totalM - segCount*segM) / totalM * 100).toFixed(2)
-        return (
-          <div key={dur} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-            <div style={{ width: 52, flexShrink: 0, textAlign: 'right', fontSize: 11, fontWeight: 700, color }}>{dur===0?'Full Day':dur+'h'}</div>
-            <div style={{ flex: 1, position: 'relative', height: 28, background: 'var(--surface)', borderRadius: 6, border: '1px solid var(--border)', overflow: 'hidden' }}>
-              {Array.from({ length: segCount }, (_, i) => {
-                const left = (i*segM/totalM*100).toFixed(2)
-                const width = (segM/totalM*100).toFixed(2)
-                const sM = openM+i*segM, eM = sM+segM
-                return (
-                  <div key={i} style={{ position: 'absolute', left: left+'%', width: `calc(${width}% - 2px)`, height: '100%', background: color, borderRadius: 5, opacity: .82, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }} title={`${fmtM(sM)} – ${fmtM(eM)}`}>
-                    <span style={{ fontSize: 9, fontWeight: 700, color: 'white', opacity: .9, whiteSpace: 'nowrap', padding: '0 3px' }}>{fmtM(sM)}–{fmtM(eM)}</span>
-                  </div>
-                )
-              })}
-              {+remPct > 0 && <div style={{ position: 'absolute', right: 0, width: remPct+'%', height: '100%', background: 'rgba(0,0,0,.06)', borderRadius: 5, border: '1.5px dashed var(--border)' }} />}
-            </div>
-            <div style={{ width: 32, flexShrink: 0, fontSize: 10, color: 'var(--mutedl)' }}>×{segCount}</div>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-// ── SEAT EDITOR ────────────────────────────────────────────────
 export function SeatEditor() {
-  const { S, set, go, saveLibrary } = useApp()
+  const { S, set, go, saveSeatLayout } = useApp()
   const lib = S.ownerLibrary
+  const [floors, setFloors] = useState(() => clone(S.gridFloors || lib?.floors_config || [newFloor(0)]))
   const [gridTool, setGridTool] = useState(S.gridTool || 'add')
-  const [, forceUpdate] = useState(0)
-  const repaint = () => forceUpdate(n => n+1)
+  const [saving, setSaving] = useState(false)
 
-  // Ensure floors exist
   useEffect(() => {
-    if (!S.gridFloors || !S.gridFloors.length) {
-      set({ gridFloors: [{ id:'f1', name:'Ground Floor', rooms:[{ id:'r1', name:'Main Hall', seats:[], cols:20, rows:14 }] }], activeFloor:0, activeRoom:0 })
-    }
-  }, [])
+    setFloors(clone(S.gridFloors || lib?.floors_config || [newFloor(0)]))
+  }, [S.gridFloors, lib])
 
-  const fl = (S.gridFloors || [])[S.activeFloor]
-  const room = fl?.rooms[S.activeRoom]
-  const cols = room?.cols || 20, rows = room?.rows || 14
-  const seats = room?.seats || []
-  const seatAt = {}; seats.forEach((s,i) => { seatAt[s.r+','+s.c] = i })
+  const floor = floors[S.activeFloor] || floors[0]
+  const room = floor?.rooms[S.activeRoom] || floor?.rooms[0]
 
-  const handleCell = (r, c) => {
-    if (!room) return
-    const si = seatAt[r+','+c]
-    const arr = [...room.seats]
-    if (gridTool === 'add') {
-      if (si !== undefined) arr[si] = { ...arr[si], status: arr[si].status === 'maintenance' ? 'available' : 'maintenance' }
-      else arr.push({ r, c, label: '?', status: 'available' })
-      autoLabel(arr)
-    } else if (gridTool === 'erase') {
-      if (si !== undefined) { arr.splice(si, 1); autoLabel(arr) }
-    }
-    room.seats = arr
-    repaint()
-  }
-
-  const autoLabel = (arr) => {
-    const byRow = {}; arr.forEach(s => { (byRow[s.r]=byRow[s.r]||[]).push(s) })
-    Object.keys(byRow).sort((a,b)=>+a-+b).forEach((r,ri) => {
-      const rl = ri<26 ? String.fromCharCode(65+ri) : 'R'+(ri+1)
-      byRow[r].sort((a,b)=>a.c-b.c).forEach((s,ci) => { s.label = rl+(ci+1) })
+  const updateFloors = updater => {
+    setFloors(prev => {
+      const draft = clone(prev)
+      updater(draft)
+      return draft
     })
   }
 
-  const handleSave = async () => {
-    if (!lib) return
-    const floors_config = (S.gridFloors||[]).map(fl => ({ id:fl.id, name:fl.name, rooms:fl.rooms.map(rm => ({ id:rm.id, name:rm.name, cols:rm.cols||20, rows:rm.rows||14, seats:rm.seats.map(s=>({r:s.r,c:s.c,label:s.label,status:s.status})) })) }))
-    const allSeats = []; floors_config.forEach(fl => fl.rooms.forEach(rm => rm.seats.forEach(s => allSeats.push(s))))
-    const ok = await saveLibrary({ ...lib, floors_config, seat_grid: floors_config[0]?.rooms[0]?.seats || [], total_seats: allSeats.length })
-    if (ok) { toast(`✅ Layout saved! (${allSeats.length} seats)`); go('owner-dash') }
-    else toast('Save failed', 'error')
+  const addFloor = () => updateFloors(draft => {
+    draft.push(newFloor(draft.length))
+    set({ activeFloor: draft.length - 1, activeRoom: 0 })
+  })
+
+  const addRoom = () => updateFloors(draft => {
+    const targetFloor = draft[S.activeFloor]
+    targetFloor.rooms.push(newRoom(targetFloor.rooms.length))
+    set({ activeRoom: targetFloor.rooms.length - 1 })
+  })
+
+  const removeFloor = floorIndex => {
+    if (floors.length === 1) { toast('At least one floor is required.', 'error'); return }
+    updateFloors(draft => { draft.splice(floorIndex, 1) })
+    set({ activeFloor: Math.max(0, floorIndex - 1), activeRoom: 0 })
   }
 
-  if (!S.gridFloors) return <div className="loader"><div className="spinner" /><p>Loading editor...</p></div>
+  const removeRoom = roomIndex => {
+    if ((floor?.rooms.length || 0) === 1) { toast('At least one room is required.', 'error'); return }
+    updateFloors(draft => { draft[S.activeFloor].rooms.splice(roomIndex, 1) })
+    set({ activeRoom: Math.max(0, roomIndex - 1) })
+  }
+
+  const handleSave = async () => {
+    setSaving(true)
+    const ok = await saveSeatLayout(floors)
+    if (ok) {
+      set({ gridFloors: clone(floors) })
+      toast(`Layout saved for ${roomSeatCount(floors)} seats.`)
+      go('owner-dash')
+    } else {
+      toast('Layout save failed', 'error')
+    }
+    setSaving(false)
+  }
+
+  if (!lib) return <div className="container-sm"><p>Please create your library first.</p></div>
 
   return (
-    <div className="container" style={{ maxWidth: 980 }}>
-      <button className="back-link" onClick={() => go('owner-dash')}>← Back to Dashboard</button>
+    <div className="container" style={{ maxWidth: 1100 }}>
+      <button className="back-link" onClick={() => go('owner-dash')}>Back to Dashboard</button>
       <h1 style={{ fontFamily: '"Cormorant Garamond",serif', fontSize: 34, marginBottom: 6 }}>Seat Layout Editor</h1>
-      <p style={{ color: 'var(--mutedl)', marginBottom: 24 }}>{lib?.name}</p>
+      <p style={{ color: 'var(--mutedl)', marginBottom: 24 }}>{lib.name}</p>
 
-      {/* Presets */}
       <div className="card" style={{ padding: 22, marginBottom: 14 }}>
-        <h2 style={{ fontFamily: '"Cormorant Garamond",serif', fontSize: 18, marginBottom: 12 }}>Start with a Preset</h2>
-        <div className="lib-preset-grid">
-          {LAYOUT_PRESETS.map(p => (
-            <div key={p.id} className={`lib-preset-card ${S.editorPreset===p.id?'on':''}`} onClick={() => {
-              if (!room) return
-              const COLS2 = 20
-              const newSeats = []
-              let gridRow = 0
-              p.rows.forEach((rowDef, ri) => {
-                if (p.paired && ri > 0 && ri % 2 === 0) gridRow++
-                const gap = rowDef.gap || 0
-                let col = Math.max(0, Math.floor((COLS2 - rowDef.count - (gap>0?2:0)) / 2))
-                for (let i=1; i<=rowDef.count; i++) {
-                  if (gap>0 && i===gap+1) col+=2
-                  newSeats.push({ r:gridRow, c:col, label:'?', status:'available' }); col++
-                }
-                gridRow++
-              })
-              autoLabel(newSeats); room.seats = newSeats
-              set({ editorPreset: p.id }); repaint()
+        <div className="planner-topbar">
+          <div className="planner-group">
+            {floors.map((item, floorIndex) => (
+              <div key={item.id} className={`planner-chip ${floorIndex === S.activeFloor ? 'on' : ''}`}>
+                <button type="button" onClick={() => set({ activeFloor: floorIndex, activeRoom: 0 })}>{item.name}</button>
+                <button type="button" className="planner-chip-x" onClick={() => removeFloor(floorIndex)}>X</button>
+              </div>
+            ))}
+            <button type="button" className="btn-ghost-sm" onClick={addFloor}>+ Add Floor</button>
+          </div>
+
+          <div className="planner-group">
+            {floor?.rooms.map((item, roomIndex) => (
+              <div key={item.id} className={`planner-chip subtle ${roomIndex === S.activeRoom ? 'on' : ''}`}>
+                <button type="button" onClick={() => set({ activeRoom: roomIndex })}>{item.name}</button>
+                <button type="button" className="planner-chip-x" onClick={() => removeRoom(roomIndex)}>X</button>
+              </div>
+            ))}
+            <button type="button" className="btn-ghost-sm" onClick={addRoom}>+ Add Room</button>
+          </div>
+        </div>
+
+        <RoomPlan
+          floors={floors}
+          activeFloor={S.activeFloor}
+          activeRoom={S.activeRoom}
+          onSelectRoom={roomIndex => set({ activeRoom: roomIndex })}
+          onChange={updateFloors}
+        />
+
+        <div className="card" style={{ padding: 18, marginBottom: 14 }}>
+          <h2 style={{ fontFamily: '"Cormorant Garamond",serif', fontSize: 18, marginBottom: 10 }}>Start with a Preset</h2>
+          <div className="lib-preset-grid">
+            {LAYOUT_PRESETS.map(preset => (
+              <div key={preset.id} className={`lib-preset-card ${S.editorPreset === preset.id ? 'on' : ''}`} onClick={() => {
+                updateFloors(draft => {
+                  draft[S.activeFloor].rooms[S.activeRoom].seats = createPresetSeats(preset, room.cols)
+                })
+                set({ editorPreset: preset.id })
+              }}>
+                <span className="lp-icon">{preset.icon}</span>
+                <div className="lp-name">{preset.name}</div>
+                <div className="lp-desc">{preset.desc}</div>
+              </div>
+            ))}
+            <div className={`lib-preset-card ${S.editorPreset === 'blank' ? 'on' : ''}`} onClick={() => {
+              updateFloors(draft => { draft[S.activeFloor].rooms[S.activeRoom].seats = [] })
+              set({ editorPreset: 'blank' })
             }}>
-              <span className="lp-icon">{p.icon}</span>
-              <div className="lp-name">{p.name}</div>
-              <div className="lp-desc">{p.desc}</div>
+              <span className="lp-icon">+</span>
+              <div className="lp-name">Blank Canvas</div>
+              <div className="lp-desc">Place every seat manually.</div>
             </div>
-          ))}
-          <div className={`lib-preset-card ${S.editorPreset==='blank'?'on':''}`} onClick={() => { if(room){room.seats=[];set({editorPreset:'blank'});repaint()} }}>
-            <span className="lp-icon">✏️</span><div className="lp-name">Blank Canvas</div><div className="lp-desc">Place every seat yourself.</div>
           </div>
         </div>
-      </div>
 
-      {/* Canvas */}
-      <div className="card" style={{ padding: 22, marginBottom: 14 }}>
-        {/* Floor + room switchers */}
-        <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:12, paddingBottom:12, borderBottom:'1px solid var(--borders)', flexWrap:'wrap' }}>
-          <span style={{ fontSize:12, fontWeight:700, color:'var(--mutedl)', letterSpacing:'.5px' }}>EDITING:</span>
-          {(S.gridFloors||[]).map((f,fi) => (
-            <button key={fi} onClick={() => set({ activeFloor:fi, activeRoom:0 })} style={{ padding:'5px 12px', borderRadius:7, fontSize:12, fontWeight:600, cursor:'pointer', border:`1.5px solid ${fi===S.activeFloor?'var(--red)':'var(--border)'}`, background:fi===S.activeFloor?'var(--red)':'transparent', color:fi===S.activeFloor?'white':'var(--mutedl)' }}>{f.name}</button>
-          ))}
-          <span style={{ color:'var(--muted)', fontSize:14 }}>›</span>
-          {fl?.rooms.map((rm,ri) => (
-            <button key={ri} onClick={() => set({ activeRoom:ri })} style={{ padding:'5px 12px', borderRadius:7, fontSize:12, fontWeight:600, cursor:'pointer', border:`1.5px solid ${ri===S.activeRoom?'rgba(200,54,74,.6)':'var(--border)'}`, background:ri===S.activeRoom?'rgba(200,54,74,.1)':'transparent', color:ri===S.activeRoom?'var(--red)':'var(--mutedl)' }}>{rm.name}</button>
-          ))}
-        </div>
-
-        <div className="sge-toolbar">
-          {[['add','➕ Add / Toggle'],['move','✋ Move'],['erase','🗑️ Erase']].map(([t,lbl]) => (
-            <button key={t} className={`sge-tool ${gridTool===t?'on':''}`} onClick={() => { setGridTool(t); set({ gridTool:t }) }}>{lbl}</button>
-          ))}
-          <div className="sge-sep" />
-          <span className="sge-stat"><strong>{seats.length}</strong> seats</span>
-          <div className="sge-sep" />
-          <button className="btn-ghost-sm" onClick={() => { if(!confirm('Clear all seats in this room?'))return; if(room){room.seats=[];repaint()} }}>Clear Room</button>
-          <button className="btn-ghost-sm" onClick={() => { if(room){autoLabel(room.seats);repaint()} }}>Auto-label</button>
-        </div>
-
-        <div style={{ display:'flex', gap:14, marginBottom:10, flexWrap:'wrap', fontSize:12, color:'var(--mutedl)' }}>
-          {[['#DCF5EE','#A8E6D4','Available'],['#FEE9DA','#F4C0A0','Maintenance'],['transparent','var(--muted)','Empty']].map(([bg,br,l]) => (
-            <span key={l} style={{ display:'flex', alignItems:'center', gap:5 }}><span style={{ width:13, height:13, borderRadius:4, background:bg, border:`1px solid ${br}`, display:'inline-block', opacity:l==='Empty'?.5:1 }} />{l}</span>
-          ))}
-        </div>
-
-        <div className="sge-entrance">── ENTRANCE / FRONT ──</div>
-        <div className={`sge-canvas-wrap tool-${gridTool}`}>
-          <div className="sge-grid" style={{ gridTemplateColumns: `repeat(${cols},38px)` }}>
-            {Array.from({ length: rows }, (_, r) =>
-              Array.from({ length: cols }, (_, c) => {
-                const si = seatAt[r+','+c]
-                if (si !== undefined) {
-                  const s = seats[si]
-                  return <div key={r+','+c} className={`sgc ${s.status==='maintenance'?'seat-mt':'seat-av'}`} onClick={() => handleCell(r,c)}>{s.label}</div>
-                }
-                return <div key={r+','+c} className="sgc empty" onClick={() => handleCell(r,c)} />
-              })
-            )}
+        <div className="card" style={{ padding: 18 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px 120px', gap: 12, marginBottom: 14 }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Room Name</label>
+              <input className="form-input" value={room?.name || ''} onChange={ev => updateFloors(draft => { draft[S.activeFloor].rooms[S.activeRoom].name = ev.target.value })} />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Cols</label>
+              <input className="form-input" type="number" min="8" max="30" value={room?.cols || 20} onChange={ev => updateFloors(draft => { draft[S.activeFloor].rooms[S.activeRoom].cols = Math.max(8, Math.min(30, Number(ev.target.value) || 20)) })} />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Rows</label>
+              <input className="form-input" type="number" min="4" max="24" value={room?.rows || 14} onChange={ev => updateFloors(draft => { draft[S.activeFloor].rooms[S.activeRoom].rows = Math.max(4, Math.min(24, Number(ev.target.value) || 14)) })} />
+            </div>
           </div>
+
+          <div className="sge-toolbar">
+            {[['add', 'Add / Toggle'], ['move', 'Move'], ['erase', 'Erase']].map(([tool, label]) => (
+              <button key={tool} className={`sge-tool ${gridTool === tool ? 'on' : ''}`} onClick={() => { setGridTool(tool); set({ gridTool: tool }) }}>{label}</button>
+            ))}
+            <div className="sge-sep" />
+            <span className="sge-stat"><strong>{room?.seats.length || 0}</strong> seats in this room</span>
+            <div className="sge-sep" />
+            <button className="btn-ghost-sm" onClick={() => updateFloors(draft => { draft[S.activeFloor].rooms[S.activeRoom].seats = [] })}>Clear Room</button>
+            <button className="btn-ghost-sm" onClick={() => updateFloors(draft => { draft[S.activeFloor].rooms[S.activeRoom].seats = autoLabelSeats(draft[S.activeFloor].rooms[S.activeRoom].seats) })}>Auto-label</button>
+          </div>
+
+          {room && (
+            <SeatGrid
+              room={room}
+              tool={gridTool}
+              onChange={nextSeats => updateFloors(draft => { draft[S.activeFloor].rooms[S.activeRoom].seats = nextSeats })}
+            />
+          )}
+          <p style={{ color: 'var(--mutedl)', fontSize: 12, marginTop: 8 }}>Use Add to place seats, Move to drag them around, and Erase to remove them.</p>
         </div>
-        <p style={{ color:'var(--mutedl)', fontSize:12, marginTop:8, lineHeight:1.6 }}>
-          <strong style={{ color:'var(--text)' }}>Add:</strong> click empty → seat · click seat → maintenance &nbsp;|&nbsp; <strong style={{ color:'var(--text)' }}>Erase:</strong> click seat to remove
-        </p>
       </div>
 
-      <div style={{ background:'rgba(200,54,74,.05)', border:'1px solid rgba(200,54,74,.15)', borderRadius:12, padding:14, marginBottom:18, fontSize:13, color:'var(--mutedl)', lineHeight:1.65 }}>
-        ⚠️ <strong style={{ color:'var(--text)' }}>Saving regenerates all seat records.</strong> Confirmed bookings are not deleted.
+      <div style={{ background: 'rgba(200,54,74,.05)', border: '1px solid rgba(200,54,74,.15)', borderRadius: 12, padding: 14, marginBottom: 18, fontSize: 13, color: 'var(--mutedl)', lineHeight: 1.65 }}>
+        Saving stores the floor and room arrangement on the library and syncs the student-facing booking layout from the same configuration.
       </div>
-      <div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
-        <button className="btn-red" onClick={handleSave}>Save Layout ({seats.length} seats in this room)</button>
-        <button className="btn-outline" onClick={() => go('owner-dash')}>Cancel</button>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        <button className="btn-red" onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : `Save All Floors (${roomSeatCount(floors)} seats)`}</button>
+        <button className="btn-outline" onClick={() => setFloors(clone(lib.floors_config || [newFloor(0)]))}>Reset to Saved</button>
       </div>
     </div>
   )

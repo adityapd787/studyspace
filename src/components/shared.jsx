@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useApp } from '../lib/AppContext'
-import { DEMO_MODE } from '../lib/supabase'
+import { DEMO_MODE, sb } from '../lib/supabase'
 import { SUB_PLANS, LAYOUT_PRESETS, computeShifts, AMENITY_PRESETS } from '../lib/constants'
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -51,15 +51,56 @@ export function Nav() {
 
 // ── Auth Modal ─────────────────────────────────────────────────
 export function AuthModal() {
-  const { S, set, demoLogin } = useApp()
+  const { S, set, demoLogin, hydrateAuth } = useApp()
   if (!S.authModal) return null
   const { authMode: mode, authRole: role } = S
   const isForgot = mode === 'forgot', isLogin = mode === 'login'
 
-  const handleSubmit = async e => {
-    e.preventDefault()
+  const handleSubmit = async ev => {
+    ev.preventDefault()
     if (DEMO_MODE) { demoLogin(role); return }
-    // Real auth omitted for brevity — same as original
+    const form = new FormData(ev.currentTarget)
+    const fullName = String(form.get('full_name') || '').trim()
+    const email = String(form.get('email') || '').trim()
+    const password = String(form.get('password') || '')
+
+    try {
+      if (isForgot) {
+        const { error } = await sb.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin,
+        })
+        if (error) throw error
+        toast('Password reset link sent to your email.')
+        set({ authMode: 'login' })
+        return
+      }
+
+      if (isLogin) {
+        const { data, error } = await sb.auth.signInWithPassword({ email, password })
+        if (error) throw error
+        if (data?.user) await hydrateAuth(data.user)
+        toast('Signed in successfully.')
+        set({ authModal: false })
+        return
+      }
+
+      const { data, error } = await sb.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+            role,
+          },
+        },
+      })
+      if (error) throw error
+      if (data?.user) await hydrateAuth(data.user)
+      toast(data?.session ? 'Account created successfully.' : 'Account created. Check your email to confirm.')
+      set({ authModal: false, authMode: 'login' })
+    } catch (error) {
+      toast(error.message || 'Authentication failed', 'error')
+    }
   }
 
   return (
@@ -95,9 +136,9 @@ export function AuthModal() {
             </div>
           ) : (
             <>
-              {mode === 'signup' && <div className="form-group"><label>Full Name</label><input className="form-input" type="text" placeholder="Your full name" required /></div>}
-              <div className="form-group"><label>Email</label><input className="form-input" type="email" placeholder="you@example.com" required /></div>
-              {!isForgot && <div className="form-group"><label>Password</label><input className="form-input" type="password" placeholder={isLogin ? 'Your password' : 'Min. 6 characters'} required /></div>}
+              {mode === 'signup' && <div className="form-group"><label>Full Name</label><input name="full_name" className="form-input" type="text" placeholder="Your full name" required /></div>}
+              <div className="form-group"><label>Email</label><input name="email" className="form-input" type="email" placeholder="you@example.com" required /></div>
+              {!isForgot && <div className="form-group"><label>Password</label><input name="password" className="form-input" type="password" minLength={6} placeholder={isLogin ? 'Your password' : 'Min. 6 characters'} required /></div>}
               <button className="btn-red btn-block" type="submit">{isForgot ? 'Send Reset Link' : isLogin ? 'Sign In' : 'Create Account'}</button>
             </>
           )}
