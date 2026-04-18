@@ -1,0 +1,208 @@
+/* ── LAYOUT ──────────────────────────────────── */
+.flex        { display: flex }
+.flex-col    { display: flex; flex-direction: column }
+.flex-1      { flex: 1 }
+.flex-wrap   { flex-wrap: wrap }
+.items-center{ align-items: center }
+.items-start { align-items: flex-start }
+.justify-between { justify-content: space-between }
+.justify-center  { justify-content: center }
+.justify-end     { justify-content: flex-end }
+.gap-4  { gap: 4px }
+.gap-6  { gap: 6px }
+.gap-8  { gap: 8px }
+.gap-10 { gap: 10px }
+.gap-12 { gap: 12px }
+.gap-14 { gap: 14px }
+.gap-16 { gap: 16px }
+.gap-18 { gap: 18px }
+.gap-20 { gap: 20px }
+.flex-shrink-0 { flex-shrink: 0 }
+.min-w-0 { min-width: 0 }
+.overflow-x-auto { overflow-x: auto }
+.overflow-hidden { overflow: hidden }
+.w-full  { width: 100% }
+.h-full  { height: 100% }
+.relative { position: relative }
+.absolute { position: absolute }
+.inset-0  { inset: 0 }
+.pointer-none { pointer-events: none }
+.grid-2  { display: grid; grid-template-columns: 1fr 1fr; gap: 14px }
+.grid-3  { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px }
+.auto-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: 12px }
+.wrap-wrap { flex-wrap: wrap }
+
+/* ── SPACING ─────────────────────────────────── */
+.mt-4  { margin-top: 4px }
+.mt-6  { margin-top: 6px }
+.mt-8  { margin-top: 8px }
+.mt-10 { margin-top: 10px }
+.mt-12 { margin-top: 12px }
+.mt-14 { margin-top: 14px }
+.mt-16 { margin-top: 16px }
+.mt-18 { margin-top: 18px }
+.mt-20 { margin-top: 20px }
+.mt-24 { margin-top: 24px }
+.mt-28 { margin-top: 28px }
+.mt-36 { margin-top: 36px }
+.mb-4  { margin-bottom: 4px }
+.mb-6  { margin-bottom: 6px }
+.mb-8  { margin-bottom: 8px }
+.mb-10 { margin-bottom: 10px }
+.mb-12 { margin-bottom: 12px }
+.mb-14 { margin-bottom: 14px }
+.mb-16 { margin-bottom: 16px }
+.mb-18 { margin-bottom: 18px }
+.mb-20 { margin-bottom: 20px }
+.mb-24 { margin-bottom: 24px }
+.mb-28 { margin-bottom: 28px }
+.mb-36 { margin-bottom: 36px }
+.p-16  { padding: 16px }
+.p-20  { padding: 20px }
+.p-22  { padding: 22px }
+.p-24  { padding: 24px }
+.p-26  { padding: 26px }
+.p-28  { padding: 28px }
+.p-32  { padding: 32px }
+.p-38  { padding: 38px }
+.pb-8  { padding-bottom: 8px }
+.pb-12 { padding-bottom: 12px }
+.pb-24 { padding-bottom: 24px }
+
+/* ── TYPOGRAPHY ──────────────────────────────── */
+.text-xs   { font-size: 11px }
+.text-sm   { font-size: 12px }
+.text-base { font-size: 13px }
+.text-md   { font-size: 14px }
+.text-lg   { font-size: 15px }
+.text-xl   { font-size: 16px }
+.text-h3   { font-size: 17px }
+.text-h2   { font-size: 18px }
+.fw-500    { font-weight: 500 }
+.fw-600    { font-weight: 600 }
+.fw-700    { font-weight: 700 }
+.font-serif { font-family: "Cormorant Garamond", serif }
+.lh-1      { line-height: 1 }
+.lh-16     { line-height: 1.6 }
+.lh-175    { line-height: 1.75 }
+.lh-185    { line-height: 1.85 }
+.text-center { text-align: center }
+.text-right  { text-align: right }
+.uppercase   { text-transform: uppercase }
+.tracking-wide { letter-spacing: 0.5px }
+.tracking-wider { letter-spacing: 1px }
+.tracking-widest { letter-spacing: 2px }
+.truncate  { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.no-wrap   { white-space: nowrap }
+
+/* ── COLOURS ─────────────────────────────────── */
+.c-text    { color: var(--text) }
+.c-muted   { color: var(--mutedl) }
+.c-hint    { color: var(--muted) }
+.c-red     { color: var(--red) }
+.c-green   { color: var(--green) }
+.c-blue    { color: var(--blue) }
+.c-yellow  { color: var(--yellow) }
+.c-purple  { color: var(--purple) }
+.bg-surface { background: var(--surface) }
+.bg-card    { background: var(--card) }
+.border-b   { border-bottom: 1px solid var(--borders) }
+.border-top { border-top: 1px solid var(--borders) }
+
+/* ── COMMON COMPONENT SHORTCUTS ──────────────── */
+/* Page header pattern */
+.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 36px; flex-wrap: wrap; gap: 16px }
+.page-title  { font-family: "Cormorant Garamond", serif; font-size: 36px; margin-bottom: 6px; color: var(--text) }
+.page-sub    { color: var(--mutedl); margin-bottom: 28px }
+.section-label { font-size: 11px; font-weight: 700; color: var(--mutedl); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 18px }
+
+/* Avatar */
+.avatar      { border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; color: white; flex-shrink: 0 }
+.avatar-sm   { width: 32px; height: 32px; font-size: 11px; background: var(--red) }
+.avatar-md   { width: 44px; height: 44px; font-size: 15px; background: var(--red) }
+.avatar-lg   { width: 72px; height: 72px; font-size: 24px; background: var(--red) }
+
+/* Stars */
+.stars-yellow { color: var(--yellow); font-size: 14px }
+
+/* Status pills */
+.pill-green  { background: rgba(26,168,130,.12); color: var(--green) }
+.pill-red    { background: rgba(200,54,74,.12);  color: var(--red) }
+.pill-blue   { background: rgba(42,114,181,.12); color: var(--blue) }
+.pill-yellow { background: rgba(196,134,10,.12); color: var(--yellow) }
+.pill-muted  { background: rgba(196,180,168,.15); color: var(--mutedl) }
+
+/* Divider line */
+.divider { border: none; border-top: 1px solid var(--borders); margin: 20px 0 }
+
+/* Overlay backdrop */
+.backdrop { position: fixed; inset: 0; background: rgba(250,245,238,.88); display: flex; align-items: center; justify-content: center; padding: 24px; backdrop-filter: blur(8px); z-index: 1000 }
+
+/* Action buttons row */
+.action-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; flex-shrink: 0 }
+
+/* Stat value + label pattern */
+.stat-val { font-family: "Cormorant Garamond", serif; font-size: 34px; font-weight: 700; line-height: 1 }
+.stat-lbl { color: var(--mutedl); font-size: 12px; margin-top: 4px }
+
+/* Library card rating row */
+.lib-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px }
+
+/* Booking row */
+.bk-detail { color: var(--mutedl); font-size: 13px }
+
+/* Form section */
+.form-section { margin-bottom: 28px; padding-bottom: 28px; border-bottom: 1px solid var(--borders) }
+.form-section:last-of-type { border: none; margin-bottom: 0; padding-bottom: 0 }
+
+/* Warning box */
+.warn-box { background: rgba(200,54,74,.05); border: 1px solid rgba(200,54,74,.15); border-radius: 12px; padding: 14px; font-size: 13px; color: var(--mutedl); line-height: 1.65 }
+
+/* Hint text */
+.hint-text { font-size: 12px; color: var(--mutedl); margin-top: 5px; line-height: 1.5 }
+
+/* Info badge */
+.info-badge { font-size: 11px; font-weight: 700; background: rgba(26,168,130,.1); color: var(--green); padding: 3px 8px; border-radius: 6px }
+
+@media (max-width: 640px) {
+  .grid-2, .grid-3 { grid-template-columns: 1fr }
+  .sm-flex-col { flex-direction: column }
+  .sm-hidden { display: none }
+}
+
+/* ── ADDITIONAL UTILITIES (from audit) ──────────── */
+.container-wide { max-width: 1080px; margin: 0 auto }
+.container-mid  { max-width: 960px;  margin: 0 auto }
+.text-22 { font-size: 22px }
+.text-24 { font-size: 24px }
+.text-26 { font-size: 26px }
+.text-28 { font-size: 28px }
+.text-30 { font-size: 30px }
+.text-32 { font-size: 32px }
+.text-34 { font-size: 34px }
+.text-36 { font-size: 36px }
+.text-48 { font-size: 48px }
+.hero-emoji { font-size: 78px; display: block; margin-bottom: 24px }
+.confirm-ticket-icon { font-size: 52px; flex-shrink: 0 }
+.lh-115 { line-height: 1.15 }
+.mt-22  { margin-top: 22px }
+.mb-22  { margin-bottom: 22px }
+.mb-48  { margin-bottom: 48px }
+.p-38   { padding: 38px }
+.tracking-ls { letter-spacing: .5px }
+/* Dynamic border color helper — use with CSS variable */
+.border-payopt { border: 1px solid var(--border); transition: border-color .2s }
+/* Section max-width wrappers */
+.mw-700 { max-width: 700px }
+.mw-980 { max-width: 980px }
+.mw-1080 { max-width: 1080px }
+/* Seat map cell */
+.seat-cell-owner { width: 30px; height: 30px; border-radius: 6px; font-size: 9px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0 }
+/* Review star button */
+.star-btn { font-size: 32px; background: none; border: none; cursor: pointer; line-height: 1 }
+/* Lightbox close */
+.lightbox-close { position: absolute; top: 18px; right: 22px; color: white; font-size: 28px; background: none; border: none; cursor: pointer }
+/* Grid 1/-1 span */
+.col-span-full { grid-column: 1 / -1 }
+/* display:inline-block shorthand */
+.inline-block { display: inline-block }
