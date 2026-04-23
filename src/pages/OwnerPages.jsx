@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useApp } from '../lib/AppContext'
+import { DEMO_MODE, sb } from '../lib/supabase'
 import { LAYOUT_PRESETS, AMENITY_PRESETS } from '../lib/constants'
 import { e, fmtDate, initials, toast, AmenityInput } from '../components/shared'
 import { ownerStats, OWNER_TABS, SHIFT_OPTS, TAG_COLORS, OWNER_SEAT_LEGEND, revSummary } from '../lib/ui-config'
 
 // ── OWNER DASHBOARD ────────────────────────────────────────────
 export function OwnerDash() {
-  const { S, set, go, fetchOwnerData } = useApp()
+  const { S, set, go, fetchOwnerData, sendAnnouncement } = useApp()
   if (S.loading) return <div className="container"><div className="loader"><div className="spinner" /><p>Loading dashboard...</p></div></div>
   if (!S.ownerLibrary) return <EditLibrary />
 
@@ -81,14 +82,14 @@ export function OwnerDash() {
       </div>
 
       <div className="tabs">
-        {[['bookings','📋 Bookings'],['seatmap','🪑 Seat Map'],['revenue','📊 Revenue']].map(([id,lbl]) => (
+        {[['bookings','📋 Bookings'],['seatmap','🪑 Seat Map'],['revenue','📊 Revenue'],['announce','📢 Announce']].map(([id,lbl]) => (
           <button key={id} className={`tab ${S.ownerTab===id?'on':''}`} onClick={() => set({ ownerTab: id })}>{lbl}</button>
         ))}
       </div>
 
       {S.ownerTab === 'bookings' && (
-        <div className="card" className="p-26">
-          <div className="sec-hd"><h2>All Bookings</h2><span className="spill" className="pill-green">{bks.filter(b=>b.status==='confirmed').length} confirmed</span></div>
+        <div className="card p-26">
+          <div className="sec-hd"><h2>All Bookings</h2><span className="spill pill-green">{bks.filter(b=>b.status==='confirmed').length} confirmed</span></div>
           {!bks.length ? <div className="empty-s"><span className="hero-emoji" style={{ fontSize: 52, marginBottom: 14 }}>📭</span><p>No bookings yet.</p></div>
             : bks.slice(0, 20).map(b => {
               const isT = b.booking_date === td
@@ -105,7 +106,7 @@ export function OwnerDash() {
       )}
 
       {S.ownerTab === 'seatmap' && (
-        <div className="card" className="p-26">
+        <div className="card p-26">
           <div className="sec-hd"><h2>Today's Seat Map</h2></div>
           <div className="entrance">── ENTRANCE / FRONT ──</div>
           <div className="overflow-x-auto">{seatMapHTML}</div>
@@ -113,7 +114,7 @@ export function OwnerDash() {
       )}
 
       {S.ownerTab === 'revenue' && (
-        <div className="card" className="p-26">
+        <div className="card p-26">
           <div className="sec-hd"><h2>Revenue — Last 7 Days</h2></div>
           <div className="bar-chart">
             {last7.map(d => <div key={d.ds} className={`bar ${d.isToday?'today':''}`} style={{ height: Math.max(6, Math.round((d.amt/maxRev)*88)) }} title={`${d.day}: ₹${d.amt.toLocaleString('en-IN')}`} />)}
@@ -128,6 +129,68 @@ export function OwnerDash() {
           </div>
         </div>
       )}
+
+      {S.ownerTab === 'announce' && (
+        <AnnouncementsPanel lib={lib} sendAnnouncement={sendAnnouncement} />
+      )}
+    </div>
+  )
+}
+
+// ── ANNOUNCEMENTS PANEL ────────────────────────────────────────
+function AnnouncementsPanel({ lib, sendAnnouncement }) {
+  const [msg, setMsg] = useState('')
+  const [sent, setSent] = useState([])
+  const [busy, setBusy] = useState(false)
+
+  const handle = async () => {
+    if (!msg.trim()) return
+    setBusy(true)
+    const ok = await sendAnnouncement(msg)
+    if (ok) {
+      setSent(prev => [{ id: Date.now(), message: msg.trim(), created_at: new Date().toISOString() }, ...prev])
+      setMsg('')
+      toast('✅ Announcement sent to all active subscribers!')
+    } else {
+      toast('Failed to send announcement', 'error')
+    }
+    setBusy(false)
+  }
+
+  return (
+    <div className="card p-26">
+      <div className="sec-hd">
+        <h2>Send Announcement</h2>
+        <span className="spill pill-green">{lib?.name}</span>
+      </div>
+      <p className="c-muted text-md mb-18" style={{ lineHeight:1.65 }}>
+        Send a message to all students with an active subscription at your library. Use this for schedule changes, maintenance notices, or special offers.
+      </p>
+      <div className="form-group">
+        <label>Message</label>
+        <textarea
+          placeholder="e.g. Library will remain closed on Sunday 27th April for maintenance. We apologise for the inconvenience."
+          value={msg}
+          onChange={ev => setMsg(ev.target.value)}
+          style={{ minHeight: 100 }}
+        />
+        <p className="hint-text">{msg.length}/500 characters</p>
+      </div>
+      <button className="btn-red" disabled={busy || !msg.trim() || msg.length > 500} onClick={handle}>
+        {busy ? 'Sending...' : '📢 Send to Subscribers'}
+      </button>
+
+      {sent.length > 0 && (
+        <div className="mt-28">
+          <p className="section-label">Sent this session</p>
+          {sent.map(a => (
+            <div key={a.id} style={{ padding:'12px 0', borderBottom:'1px solid var(--borders)' }}>
+              <p className="text-md c-muted lh-16 mb-4">{a.message}</p>
+              <span className="text-sm c-hint">{new Date(a.created_at).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -136,52 +199,98 @@ export function OwnerDash() {
 export function EditLibrary() {
   const { S, set, go, saveLibrary } = useApp()
   const lib = S.ownerLibrary; const isEdit = !!lib
-  const [amenities, setAmenities] = useState(S.addLibAmenities)
-  const [photos, setPhotos] = useState(S.addLibPhotos)
-  const [open, setOpen] = useState(S.addLibOpen)
-  const [close, setClose] = useState(S.addLibClose)
-  const [shifts, setShifts] = useState(Array.isArray(S.addLibShift) ? S.addLibShift : [S.addLibShift || 3])
-  const [busy, setBusy] = useState(false)
-
   const SHIFTS = [{h:3,lbl:'3 hrs'},{h:4,lbl:'4 hrs'},{h:6,lbl:'6 hrs'},{h:12,lbl:'12 hrs'},{h:0,lbl:'Full Day'}]
+  const TAG_COLORS = { PREMIUM:'#C8364A', STANDARD:'#4A90D9', BUDGET:'#2A9D8F' }
 
-  // Seat count from editor
+  // ── Controlled form state ──────────────────────────────────────
+  const [name,     setName]     = useState(lib?.name || '')
+  const [tag,      setTag]      = useState(lib?.tag  || 'STANDARD')
+  const [location, setLocation] = useState(lib?.location || '')
+  const [desc,     setDesc]     = useState(lib?.description || '')
+  const [mapsUrl,  setMapsUrl]  = useState(lib?.maps_url || '')
+  const [priceHr,  setPriceHr]  = useState(lib?.price_per_hour || '')
+  const [priceM,   setPriceM]   = useState(lib?.price_monthly  || '')
+  const [price3,   setPrice3]   = useState(lib?.price_3monthly || '')
+  const [price6,   setPrice6]   = useState(lib?.price_6monthly || '')
+  const [priceA,   setPriceA]   = useState(lib?.price_annual   || '')
+  const [openT,    setOpenT]    = useState(S.addLibOpen  || lib?.hours_open  || '06:00')
+  const [closeT,   setCloseT]   = useState(S.addLibClose || lib?.hours_close || '22:00')
+  const [shifts,   setShifts]   = useState(Array.isArray(S.addLibShift) ? S.addLibShift : (lib?.shift_durations || [3]))
+  const [amenities,setAmenities]= useState(S.addLibAmenities.length ? S.addLibAmenities : (lib?.amenities || []))
+  const [photos,   setPhotos]   = useState(() => {
+    const src = S.addLibPhotos?.some(p => p) ? S.addLibPhotos : (lib?.photos || [])
+    return src.length ? src : ['']
+  })
+  const [busy,     setBusy]     = useState(false)
+  const [uploadingIdx, setUploadingIdx] = useState(null)
+
   const editorSeatCount = (S.gridFloors || []).reduce((a, fl) => a + fl.rooms.reduce((b, rm) => b + rm.seats.length, 0), 0)
+  const totalSeats = editorSeatCount > 0 ? editorSeatCount : (parseInt(lib?.total_seats) || 0)
 
-  const toggleShift = h => {
-    setShifts(prev => {
-      const idx = prev.indexOf(h)
-      if (idx >= 0) return prev.length > 1 ? prev.filter(x => x !== h) : prev
-      return [...prev, h]
-    })
+  const toggleShift = h => setShifts(prev => {
+    const has = prev.includes(h)
+    if (has) return prev.length > 1 ? prev.filter(x => x !== h) : prev
+    return [...prev, h]
+  })
+
+  // ── Photo from device / camera ────────────────────────────────
+  const handlePhotoFile = async (file, idx) => {
+    if (!file) return
+    setUploadingIdx(idx)
+    if (DEMO_MODE) {
+      // Demo: use object URL (temporary, shown until refresh)
+      const url = URL.createObjectURL(file)
+      setPhotos(prev => { const p=[...prev]; p[idx]=url; return p })
+    } else {
+      // Production: upload to Supabase Storage
+      try {
+        const ext = file.name.split('.').pop()
+        const path = `library-photos/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+        const { data, error } = await sb.storage.from('library-photos').upload(path, file)
+        if (error) { toast('Upload failed: ' + error.message, 'error'); setUploadingIdx(null); return }
+        const { data: { publicUrl } } = sb.storage.from('library-photos').getPublicUrl(path)
+        setPhotos(prev => { const p=[...prev]; p[idx]=publicUrl; return p })
+      } catch (err) {
+        toast('Upload failed', 'error')
+      }
+    }
+    setUploadingIdx(null)
   }
 
+  // ── Submit ─────────────────────────────────────────────────────
   const handleSubmit = async ev => {
     ev.preventDefault()
+    if (!name.trim())     { toast('Library name is required', 'error'); return }
+    if (!location.trim()) { toast('Location is required', 'error'); return }
+    if (!priceHr)         { toast('Price per shift is required', 'error'); return }
+    if (!openT || !closeT){ toast('Opening hours are required', 'error'); return }
+    if (!desc.trim())     { toast('Description is required', 'error'); return }
     setBusy(true)
-    const fd = new FormData(ev.target)
-    const tag = fd.get('tag')
-    const tagColors = { PREMIUM:'#C8364A', STANDARD:'#4A90D9', BUDGET:'#2A9D8F' }
-    const intVal = k => { const v = parseInt(fd.get(k)); return isNaN(v) ? null : v }
-    const totalSeats = editorSeatCount > 0 ? editorSeatCount : (intVal('total_seats') || 0)
     const data = {
-      name: fd.get('name'), tag, tag_color: tagColors[tag],
-      price_per_hour: intVal('price_per_hour') || 0,
-      location: fd.get('location'), total_seats: totalSeats,
-      hours: open + ' – ' + close, hours_open: open, hours_close: close,
+      name: name.trim(), tag, tag_color: TAG_COLORS[tag],
+      price_per_hour:  parseInt(priceHr) || 0,
+      price_monthly:   parseInt(priceM)  || null,
+      price_3monthly:  parseInt(price3)  || null,
+      price_6monthly:  parseInt(price6)  || null,
+      price_annual:    parseInt(priceA)  || null,
+      location: location.trim(),
+      total_seats: totalSeats,
+      hours: openT + ' – ' + closeT,
+      hours_open: openT, hours_close: closeT,
       shift_durations: shifts, shift_duration: shifts[0] || 3,
-      description: fd.get('description'),
-      maps_url: fd.get('maps_url') || null,
-      price_monthly: intVal('price_monthly'), price_3monthly: intVal('price_3monthly'),
-      price_6monthly: intVal('price_6monthly'), price_annual: intVal('price_annual'),
-      amenities, photos: photos.filter(u => u?.trim()),
-    }
-    if (!data.name || !data.location || !data.price_per_hour || !data.hours_open || !data.description) {
-      toast('Please fill all required fields', 'error'); setBusy(false); return
+      description: desc.trim(),
+      maps_url: mapsUrl.trim() || null,
+      amenities,
+      photos: photos.filter(u => u?.trim()),
     }
     const ok = await saveLibrary(data)
-    if (ok) { set({ addLibAmenities: [], addLibPhotos: ['','',''] }); toast('✅ Library saved!'); go('owner-dash') }
-    else { toast('Save failed', 'error') }
+    if (ok) {
+      set({ addLibAmenities: [], addLibPhotos: [''] })
+      toast('✅ Library saved!')
+      go('owner-dash')
+    } else {
+      toast('Save failed — check your connection', 'error')
+    }
     setBusy(false)
   }
 
@@ -191,38 +300,50 @@ export function EditLibrary() {
       <h1 className="font-serif text-34 mb-6">{isEdit ? 'Edit Library' : 'List Your Library'}</h1>
       <p className="c-muted mb-36">{isEdit ? 'Update your library details and pricing.' : 'Add your space to StudySpace and start receiving bookings.'}</p>
 
-      <div className="card" className="p-32">
-        <form onSubmit={handleSubmit}>
+      <div className="card p-32">
+        <form onSubmit={handleSubmit} noValidate>
 
+          {/* ── Basic Info ──────────────────────────────────────── */}
           <div className="field-section">
             <h3>Basic Information</h3>
-            <div className="form-group"><label>Library Name *</label><input name="name" className="form-input" placeholder="e.g. The Scholar's Den" defaultValue={lib?.name || ''} required /></div>
+            <div className="form-group">
+              <label>Library Name *</label>
+              <input className="form-input" placeholder="e.g. The Scholar's Den" value={name} onChange={ev => setName(ev.target.value)} />
+            </div>
             <div className="form-row">
-              <div className="form-group"><label>Category *</label>
-                <select name="tag" defaultValue={lib?.tag || 'STANDARD'}>
+              <div className="form-group">
+                <label>Category *</label>
+                <select value={tag} onChange={ev => setTag(ev.target.value)}>
                   {['BUDGET','STANDARD','PREMIUM'].map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
               <div className="form-group">
                 <label>Total Seats</label>
-                <input name="total_seats" className="form-input" type="number" min="0" placeholder="Auto from Seat Editor" defaultValue={editorSeatCount > 0 ? editorSeatCount : (lib?.total_seats || '')} style={{ background: editorSeatCount > 0 ? 'rgba(26,168,130,.06)' : 'var(--surface)' }} />
-                <p className="form-hint">{editorSeatCount > 0 ? '✅ Auto-synced from Seat Editor' : 'Leave blank — auto-synced when you save a layout.'}</p>
+                <input className="form-input" type="number" min="0" placeholder="Auto from Seat Editor"
+                  value={totalSeats || ''} readOnly={editorSeatCount > 0}
+                  style={{ background: editorSeatCount > 0 ? 'rgba(26,168,130,.06)' : 'var(--surface)' }} />
+                <p className="form-hint">{editorSeatCount > 0 ? '✅ Auto-synced from Seat Editor' : 'Auto-synced when you save a seat layout.'}</p>
               </div>
             </div>
-            <div className="form-group"><label>Location / Area *</label><input name="location" className="form-input" placeholder="e.g. Hazratganj, Lucknow" defaultValue={lib?.location || ''} required /></div>
+            <div className="form-group">
+              <label>Location / Area *</label>
+              <input className="form-input" placeholder="e.g. Hazratganj, Lucknow" value={location} onChange={ev => setLocation(ev.target.value)} />
+            </div>
 
+            {/* Time pickers */}
             <div className="form-group">
               <label>Opening Hours *</label>
               <div className="time-picker-wrap">
-                <div className="time-input-group"><label>Opens at</label><input type="time" value={open} onChange={ev => setOpen(ev.target.value)} required /></div>
-                <div className="time-input-group"><label>Closes at</label><input type="time" value={close} onChange={ev => setClose(ev.target.value)} required /></div>
+                <div className="time-input-group"><label>Opens at</label><input type="time" value={openT} onChange={ev => setOpenT(ev.target.value)} /></div>
+                <div className="time-input-group"><label>Closes at</label><input type="time" value={closeT} onChange={ev => setCloseT(ev.target.value)} /></div>
               </div>
-              <div className="hours-preview">🕐 {open} – {close}</div>
+              <div className="hours-preview">🕐 {openT} – {closeT}</div>
             </div>
 
+            {/* Shift selector */}
             <div className="form-group">
-              <label>Shift Duration *</label>
-              <p className="form-hint" className="mb-10">Select one or more shift lengths. Students will see all selected options when booking.</p>
+              <label>Shift Durations *</label>
+              <p className="form-hint mb-10">Select one or more. Students will see all selected options when booking.</p>
               <div className="shift-opts">
                 {SHIFTS.map(s => (
                   <div key={s.h} className={`shift-opt ${shifts.includes(s.h) ? 'on' : ''}`} onClick={() => toggleShift(s.h)}>
@@ -231,58 +352,117 @@ export function EditLibrary() {
                   </div>
                 ))}
               </div>
-              <ShiftTimeline open={open} close={close} shifts={shifts} />
+              <ShiftTimeline open={openT} close={closeT} shifts={shifts} />
             </div>
 
             <div className="form-group">
-              <label>Google Maps Link <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(optional)</span></label>
-              <input name="maps_url" className="form-input" type="url" placeholder="https://maps.google.com/?q=..." defaultValue={lib?.maps_url || ''} />
+              <label>Google Maps Link <span style={{ fontWeight:400, textTransform:'none', letterSpacing:0 }}>(optional)</span></label>
+              <input className="form-input" type="url" placeholder="https://maps.google.com/?q=..." value={mapsUrl} onChange={ev => setMapsUrl(ev.target.value)} />
             </div>
           </div>
 
+          {/* ── Description ─────────────────────────────────────── */}
           <div className="field-section">
             <h3>Description</h3>
-            <div className="form-group"><label>About Your Space *</label>
-              <textarea name="description" placeholder="Describe the vibe, key facilities, and who your library is built for..." defaultValue={lib?.description || ''} required />
+            <div className="form-group">
+              <label>About Your Space *</label>
+              <textarea placeholder="Describe the vibe, key facilities, and who your library is built for..." value={desc} onChange={ev => setDesc(ev.target.value)} />
               <p className="form-hint">2–4 sentences. Good descriptions consistently get more bookings.</p>
             </div>
           </div>
 
+          {/* ── Pricing ─────────────────────────────────────────── */}
           <div className="field-section">
             <h3>Pricing</h3>
-            <p className="c-muted text-md mb-20">Set a per-shift price first, then optionally set subscription plans.</p>
+            <p className="c-muted text-md mb-20">Set a per-shift price first, then optionally offer subscription plans.</p>
             <div className="form-row">
-              <div className="form-group"><label>Price per Shift (₹) *</label><input name="price_per_hour" className="form-input" type="number" min="1" placeholder="e.g. 60" defaultValue={lib?.price_per_hour || ''} required /><p className="form-hint">Charged per shift booking.</p></div>
-              <div className="form-group"><label>Monthly Plan (₹)</label><input name="price_monthly" className="form-input" type="number" min="1" placeholder="e.g. 1800" defaultValue={lib?.price_monthly || ''} /></div>
+              <div className="form-group">
+                <label>Price per Shift (₹) *</label>
+                <input className="form-input" type="number" min="1" placeholder="e.g. 60" value={priceHr} onChange={ev => setPriceHr(ev.target.value)} />
+                <p className="form-hint">Charged per shift booking.</p>
+              </div>
+              <div className="form-group">
+                <label>Monthly Plan (₹)</label>
+                <input className="form-input" type="number" min="1" placeholder="e.g. 1800" value={priceM} onChange={ev => setPriceM(ev.target.value)} />
+              </div>
             </div>
             <div className="form-row">
-              <div className="form-group"><label>3-Month Plan (₹)</label><input name="price_3monthly" className="form-input" type="number" min="1" placeholder="e.g. 4999" defaultValue={lib?.price_3monthly || ''} /></div>
-              <div className="form-group"><label>6-Month Plan (₹)</label><input name="price_6monthly" className="form-input" type="number" min="1" placeholder="e.g. 8999" defaultValue={lib?.price_6monthly || ''} /></div>
+              <div className="form-group">
+                <label>3-Month Plan (₹)</label>
+                <input className="form-input" type="number" min="1" placeholder="e.g. 4999" value={price3} onChange={ev => setPrice3(ev.target.value)} />
+              </div>
+              <div className="form-group">
+                <label>6-Month Plan (₹)</label>
+                <input className="form-input" type="number" min="1" placeholder="e.g. 8999" value={price6} onChange={ev => setPrice6(ev.target.value)} />
+              </div>
             </div>
-            <div className="form-group" className="form-group" style={{ maxWidth: "calc(50% - 7px)" }}>
-              <label>Annual Plan (₹)</label><input name="price_annual" className="form-input" type="number" min="1" placeholder="e.g. 15999" defaultValue={lib?.price_annual || ''} />
+            <div className="form-group" style={{ maxWidth:'calc(50% - 7px)' }}>
+              <label>Annual Plan (₹)</label>
+              <input className="form-input" type="number" min="1" placeholder="e.g. 15999" value={priceA} onChange={ev => setPriceA(ev.target.value)} />
             </div>
           </div>
 
+          {/* ── Photos ──────────────────────────────────────────── */}
           <div className="field-section">
-            <h3>Photos <span style={{ fontFamily: '"DM Sans",sans-serif', fontSize: 14, fontWeight: 400, color: 'var(--mutedl)' }}>(optional — up to 6)</span></h3>
+            <h3>Photos <span className="text-md c-muted" style={{ fontWeight:400 }}>(optional — up to 6)</span></h3>
+            <p className="form-hint mb-16">Upload from your device, take a photo directly, or paste a URL.</p>
+
             {photos.map((url, i) => (
               <div key={i} className="photo-row">
-                {url ? <img className="photo-preview" src={url} alt="" onError={ev => ev.target.style.opacity='.15'} />
-                  : <div className="photo-preview" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: 'var(--muted)' }}>📷</div>}
-                <input className="form-input" placeholder="Paste image URL" value={url} onChange={ev => { const p=[...photos]; p[i]=ev.target.value.trim(); setPhotos(p) }} />
-                <button type="button" className="btn-danger" style={{ width: 36, height: 36, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setPhotos(photos.filter((_, j) => j !== i))}>✕</button>
+                {/* Preview */}
+                {url && url.startsWith('blob:') || (url && url.startsWith('http')) ? (
+                  <img className="photo-preview" src={url} alt="" onError={ev => ev.target.style.opacity='.15'} />
+                ) : (
+                  <div className="photo-preview" style={{ display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, color:'var(--muted)' }}>📷</div>
+                )}
+
+                {/* URL input */}
+                <input className="form-input" placeholder="Paste URL or upload below →"
+                  value={url.startsWith('blob:') ? '(uploaded file)' : url}
+                  readOnly={url.startsWith('blob:')}
+                  onChange={ev => { const p=[...photos]; p[i]=ev.target.value; setPhotos(p) }}
+                  style={{ flex:1 }} />
+
+                {/* Upload from device button */}
+                <label title="Upload from device or camera" style={{
+                  width:38, height:38, borderRadius:8, background:'var(--surface)', border:'1px solid var(--border)',
+                  display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0, fontSize:16
+                }}>
+                  {uploadingIdx === i ? '⏳' : '📁'}
+                  <input type="file" accept="image/*" style={{ display:'none' }} onChange={ev => handlePhotoFile(ev.target.files[0], i)} />
+                </label>
+
+                {/* Camera button (mobile — triggers camera directly) */}
+                <label title="Take a photo" style={{
+                  width:38, height:38, borderRadius:8, background:'var(--surface)', border:'1px solid var(--border)',
+                  display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0, fontSize:16
+                }}>
+                  📷
+                  <input type="file" accept="image/*" capture="environment" style={{ display:'none' }} onChange={ev => handlePhotoFile(ev.target.files[0], i)} />
+                </label>
+
+                {/* Remove button */}
+                <button type="button" className="btn-danger"
+                  style={{ width:36, height:36, padding:0, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}
+                  onClick={() => setPhotos(photos.filter((_, j) => j !== i))}>✕</button>
               </div>
             ))}
-            {photos.length < 6 && <button type="button" className="btn-ghost-sm" className="mt-8" onClick={() => setPhotos([...photos, ''])}>+ Add Another Photo</button>}
+
+            {photos.length < 6 && (
+              <button type="button" className="btn-ghost-sm mt-8" onClick={() => setPhotos([...photos, ''])}>+ Add Another Photo</button>
+            )}
+            {DEMO_MODE && <p className="form-hint mt-8">📝 Demo mode: uploaded files are temporary (lost on refresh). Connect Supabase Storage for permanent uploads.</p>}
           </div>
 
+          {/* ── Amenities ───────────────────────────────────────── */}
           <div className="field-section">
             <h3>Amenities</h3>
             <AmenityInput amenities={amenities} setAmenities={setAmenities} />
           </div>
 
-          <button className="btn-red btn-block" type="submit" disabled={busy}>{busy ? 'Saving...' : isEdit ? 'Save Changes' : 'List My Library →'}</button>
+          <button className="btn-red btn-block" type="submit" disabled={busy}>
+            {busy ? 'Saving...' : isEdit ? 'Save Changes' : 'List My Library →'}
+          </button>
         </form>
       </div>
     </div>
@@ -297,59 +477,54 @@ function ShiftTimeline({ open, close, shifts }) {
   if (closeM <= openM) closeM += 24*60
   const totalM = closeM - openM
   if (!shifts.length || totalM <= 0) return null
-
   const fmtM = m => { m=m%1440; const h=Math.floor(m/60)%24,mm=m%60; return (h<10?'0':'')+h+':'+(mm<10?'0':'')+mm }
   const PALETTE = ['#C8364A','#2A72B5','#1AA882','#C4860A','#7B3FA0']
   const tickCount = Math.min(Math.floor(totalM/60)+1, 13)
-
   return (
-    <div className="mt-18">
+    <div style={{ marginTop:18 }}>
       <div className="flex items-center gap-8 mb-8">
-        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--mutedl)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Shift Timeline</span>
-        <span style={{ fontSize: 11, color: 'var(--muted)' }}>{open} – {close}</span>
+        <span className="text-xs fw-700 c-muted uppercase tracking-wide">Shift Timeline</span>
+        <span className="text-sm c-hint">{open} – {close}</span>
       </div>
-      {/* Tick row */}
       <div className="flex items-center gap-10 mb-4">
-        <div style={{ width: 52, flexShrink: 0 }} />
-        <div style={{ flex: 1, position: 'relative', height: 14 }}>
-          {Array.from({ length: tickCount }, (_, t) => {
-            const pct = (t * 60 / totalM) * 100
-            if (pct > 100) return null
-            const hh = (openM + t*60) % 1440
-            const lbl = (Math.floor(hh/60)<10?'0':'')+Math.floor(hh/60)+':'+(hh%60<10?'0':'')+hh%60
-            return <div key={t} style={{ position: 'absolute', left: pct+'%', transform: 'translateX(-50%)', fontSize: 9, color: 'var(--muted)', fontWeight: 600, whiteSpace: 'nowrap', top: 0 }}>{lbl}</div>
+        <div style={{ width:52, flexShrink:0 }} />
+        <div style={{ flex:1, position:'relative', height:14 }}>
+          {Array.from({length:tickCount},(_,t) => {
+            const pct=(t*60/totalM)*100; if(pct>100) return null
+            const hh=(openM+t*60)%1440
+            const lbl=(Math.floor(hh/60)<10?'0':'')+Math.floor(hh/60)+':'+(hh%60<10?'0':'')+(hh%60)
+            return <div key={t} style={{ position:'absolute',left:pct+'%',transform:'translateX(-50%)',fontSize:9,color:'var(--muted)',fontWeight:600,whiteSpace:'nowrap',top:0 }}>{lbl}</div>
           })}
         </div>
-        <div style={{ width: 32, flexShrink: 0 }} />
+        <div style={{ width:32,flexShrink:0 }} />
       </div>
-      {[...shifts].sort((a,b)=>a-b).map((dur, di) => {
-        const color = PALETTE[di % PALETTE.length]
-        const segM = dur === 0 ? totalM : dur * 60
-        const segCount = dur === 0 ? 1 : Math.floor(totalM / segM)
-        const remPct = ((totalM - segCount*segM) / totalM * 100).toFixed(2)
+      {[...shifts].sort((a,b)=>a-b).map((dur,di) => {
+        const color=PALETTE[di%PALETTE.length]
+        const segM=dur===0?totalM:dur*60
+        const segCount=dur===0?1:Math.floor(totalM/segM)
+        const remPct=((totalM-segCount*segM)/totalM*100).toFixed(2)
         return (
           <div key={dur} className="flex items-center gap-10 mb-8">
-            <div style={{ width: 52, flexShrink: 0, textAlign: 'right', fontSize: 11, fontWeight: 700, color }}>{dur===0?'Full Day':dur+'h'}</div>
-            <div style={{ flex: 1, position: 'relative', height: 28, background: 'var(--surface)', borderRadius: 6, border: '1px solid var(--border)', overflow: 'hidden' }}>
-              {Array.from({ length: segCount }, (_, i) => {
-                const left = (i*segM/totalM*100).toFixed(2)
-                const width = (segM/totalM*100).toFixed(2)
-                const sM = openM+i*segM, eM = sM+segM
-                return (
-                  <div key={i} style={{ position: 'absolute', left: left+'%', width: `calc(${width}% - 2px)`, height: '100%', background: color, borderRadius: 5, opacity: .82, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }} title={`${fmtM(sM)} – ${fmtM(eM)}`}>
-                    <span style={{ fontSize: 9, fontWeight: 700, color: 'white', opacity: .9, whiteSpace: 'nowrap', padding: '0 3px' }}>{fmtM(sM)}–{fmtM(eM)}</span>
-                  </div>
-                )
+            <div style={{ width:52,flexShrink:0,textAlign:'right',fontSize:11,fontWeight:700,color }}>{dur===0?'Full Day':dur+'h'}</div>
+            <div style={{ flex:1,position:'relative',height:28,background:'var(--surface)',borderRadius:6,border:'1px solid var(--border)',overflow:'hidden' }}>
+              {Array.from({length:segCount},(_,i) => {
+                const left=(i*segM/totalM*100).toFixed(2)
+                const width=(segM/totalM*100).toFixed(2)
+                const sM=openM+i*segM,eM=sM+segM
+                return <div key={i} style={{ position:'absolute',left:left+'%',width:`calc(${width}% - 2px)`,height:'100%',background:color,borderRadius:5,opacity:.82,display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden' }} title={`${fmtM(sM)} – ${fmtM(eM)}`}>
+                  <span style={{ fontSize:9,fontWeight:700,color:'white',opacity:.9,whiteSpace:'nowrap',padding:'0 3px' }}>{fmtM(sM)}–{fmtM(eM)}</span>
+                </div>
               })}
-              {+remPct > 0 && <div style={{ position: 'absolute', right: 0, width: remPct+'%', height: '100%', background: 'rgba(0,0,0,.06)', borderRadius: 5, border: '1.5px dashed var(--border)' }} />}
+              {+remPct>0 && <div style={{ position:'absolute',right:0,width:remPct+'%',height:'100%',background:'rgba(0,0,0,.06)',borderRadius:5,border:'1.5px dashed var(--border)' }} />}
             </div>
-            <div style={{ width: 32, flexShrink: 0, fontSize: 10, color: 'var(--mutedl)' }}>×{segCount}</div>
+            <div style={{ width:32,flexShrink:0,fontSize:10,color:'var(--mutedl)' }}>×{segCount}</div>
           </div>
         )
       })}
     </div>
   )
 }
+
 
 // ── SEAT EDITOR ────────────────────────────────────────────────
 export function SeatEditor() {
@@ -407,13 +582,13 @@ export function SeatEditor() {
   if (!S.gridFloors) return <div className="loader"><div className="spinner" /><p>Loading editor...</p></div>
 
   return (
-    <div className="container" className="mw-980">
+    <div className="container" style={{maxWidth:980,margin:"0 auto"}}>
       <button className="back-link" onClick={() => go('owner-dash')}>← Back to Dashboard</button>
       <h1 className="font-serif text-34 mb-6">Seat Layout Editor</h1>
       <p style={{ color: 'var(--mutedl)', marginBottom: 24 }}>{lib?.name}</p>
 
       {/* Presets */}
-      <div className="card" className="p-22 mb-14">
+      <div className="card p-22 mb-14">
         <h2 className="font-serif text-h2 mb-12">Start with a Preset</h2>
         <div className="lib-preset-grid">
           {LAYOUT_PRESETS.map(p => (
@@ -447,7 +622,7 @@ export function SeatEditor() {
       </div>
 
       {/* Canvas */}
-      <div className="card" className="p-22 mb-14">
+      <div className="card p-22 mb-14">
         {/* Floor + room switchers */}
         <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:12, paddingBottom:12, borderBottom:'1px solid var(--borders)', flexWrap:'wrap' }}>
           <span style={{ fontSize:12, fontWeight:700, color:'var(--mutedl)', letterSpacing:'.5px' }}>EDITING:</span>

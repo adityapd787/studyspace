@@ -42,6 +42,8 @@ addLibAmenities[], addLibPhotos[], addLibOpen, addLibClose, addLibShift[]
 
 // UI
 loading, lightboxUrl, reviewModal, reviewRating, reviewText
+selectedDate      // 'YYYY-MM-DD', defaults to today
+announcements[]   // from owner sendAnnouncement
 ```
 
 ## Navigation — screen names
@@ -68,12 +70,20 @@ createSubscription(plan)  // plan = 'monthly'|'quarterly'|'halfyear'|'annual'
 cancelBooking(id)
 submitReview()            // uses S.reviewRating, S.reviewText, S.reviewModal
 saveLibrary(data)         // insert or update based on S.ownerLibrary existence
+sendAnnouncement(msg)     // sends to all subscribers, updates S.announcements
+fetchAnnouncements(libId) // loads from DB into S.announcements
 ```
 
 ## Shift system
 - Owner sets `hours_open`, `hours_close`, `shift_durations[]` on the library
 - `computeShifts(lib)` in `constants.js` generates all slot strings
 - Students see computed slots on the Seats screen
+
+## Photo uploads
+- Demo mode: uses object URLs (temporary, lost on refresh)
+- Production: uploads to Supabase Storage bucket named 
+- Bucket must be public — create in Supabase dashboard → Storage → New bucket → Public
+- Photos section in EditLibrary supports: paste URL | 📁 file picker | 📷 camera (mobile)
 
 ## CSS conventions
 - Theme vars in `global.css` :root — use `var(--red)`, `var(--green)`, etc.
@@ -118,7 +128,7 @@ alter table seats add column if not exists room text;
 
 ## Pending features (not yet built)
 - [ ] Razorpay payment integration
-- [ ] Date picker for bookings (currently books today only)
-- [ ] Multi-floor seat display on student seat selection screen
-- [ ] Owner announcements to subscribers
+- [x] Date picker for bookings — Seats screen, up to 30 days ahead
+- [x] Multi-floor seat display — floor/room tabs on Seats screen using lib.floors_config
+- [x] Owner announcements — 📢 Announce tab in OwnerDash, AnnouncementsPanel component
 - [ ] PWA / service worker

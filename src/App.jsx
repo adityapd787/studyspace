@@ -15,8 +15,8 @@ const SCREENS = {
 }
 
 function AppInner() {
-  const { S, fetchLibraries } = useApp()
-  useEffect(() => { fetchLibraries() }, [])
+  const { S, fetchLibraries, initAuth } = useApp()
+  useEffect(() => { fetchLibraries(); if(!DEMO_MODE && initAuth) initAuth() }, [])
   const Screen = SCREENS[S.view] || Landing
   return (
     <>

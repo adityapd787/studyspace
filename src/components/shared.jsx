@@ -51,74 +51,103 @@ export function Nav() {
 
 // ── Auth Modal ─────────────────────────────────────────────────
 export function AuthModal() {
-  const { S, set, demoLogin, hydrateAuth } = useApp()
-  if (!S.authModal) return null
+  const { S, set, demoLogin, fetchOwnerData } = useApp()
   const { authMode: mode, authRole: role } = S
   const isForgot = mode === 'forgot', isLogin = mode === 'login'
 
-  const handleSubmit = async ev => {
-    ev.preventDefault()
+  // Controlled state — no querySelector needed
+  const [email,    setEmail]    = useState('')
+  const [password, setPassword] = useState('')
+  const [fullName, setFullName] = useState('')
+  const [busy,     setBusy]     = useState(false)
+
+  if (!S.authModal) return null
+
+  const close = () => {
+    set({ authModal: false })
+    setEmail(''); setPassword(''); setFullName(''); setBusy(false)
+  }
+
+  const handleSubmit = async e => {
+    e.preventDefault()
     if (DEMO_MODE) { demoLogin(role); return }
-    const form = new FormData(ev.currentTarget)
-    const fullName = String(form.get('full_name') || '').trim()
-    const email = String(form.get('email') || '').trim()
-    const password = String(form.get('password') || '')
+    if (!email.trim()) { toast('Please enter your email', 'error'); return }
 
-    try {
-      if (isForgot) {
-        const { error } = await sb.auth.resetPasswordForEmail(email, {
-          redirectTo: window.location.origin,
-        })
-        if (error) throw error
-        toast('Password reset link sent to your email.')
-        set({ authMode: 'login' })
-        return
-      }
+    setBusy(true)
 
-      if (isLogin) {
-        const { data, error } = await sb.auth.signInWithPassword({ email, password })
-        if (error) throw error
-        if (data?.user) await hydrateAuth(data.user)
-        toast('Signed in successfully.')
-        set({ authModal: false })
-        return
-      }
-
-      const { data, error } = await sb.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: fullName,
-            role,
-          },
-        },
+    if (mode === 'forgot') {
+      const { error } = await sb.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: window.location.origin
       })
-      if (error) throw error
-      if (data?.user) await hydrateAuth(data.user)
-      toast(data?.session ? 'Account created successfully.' : 'Account created. Check your email to confirm.')
-      set({ authModal: false, authMode: 'login' })
-    } catch (error) {
-      toast(error.message || 'Authentication failed', 'error')
+      setBusy(false)
+      if (error) toast(error.message, 'error')
+      else { toast('✅ Reset link sent — check your email'); close() }
+      return
+    }
+
+    if (mode === 'login') {
+      const { data, error } = await sb.auth.signInWithPassword({
+        email: email.trim(), password
+      })
+      setBusy(false)
+      if (error) {
+        toast(error.message === 'Invalid login credentials'
+          ? 'Incorrect email or password' : error.message, 'error')
+        return
+      }
+      const { data: profile } = await sb.from('profiles')
+        .select('*').eq('id', data.user.id).maybeSingle()
+      const r = profile?.role || 'student'
+      set({ user: data.user, profile, userMode: r, authModal: false })
+      toast('Welcome back, ' + (profile?.full_name?.split(' ')[0] || '') + '! 👋')
+      if (r === 'owner') fetchOwnerData()
+      return
+    }
+
+    if (mode === 'signup') {
+      const { data, error } = await sb.auth.signUp({
+        email: email.trim(), password,
+        options: { data: { full_name: fullName.trim(), role } }
+      })
+      setBusy(false)
+      if (error) { toast(error.message, 'error'); return }
+      if (!data.session) {
+        toast('✅ Check your email to confirm your account, then sign in.')
+        close(); return
+      }
+      await sb.from('profiles').upsert({
+        id: data.user.id, full_name: fullName.trim(), email: email.trim(), role
+      })
+      set({ user: data.user,
+            profile: { id: data.user.id, full_name: fullName.trim(), email: email.trim(), role },
+            userMode: role, authModal: false })
+      toast('✅ Account created! Welcome to StudySpace 🎉')
     }
   }
 
   return (
-    <div className="overlay" id="ov-a" onClick={ev => ev.target.id === 'ov-a' && set({ authModal: false })}>
+    <div className="overlay" id="ov-a" onClick={ev => ev.target.id === 'ov-a' && close()}>
       <div className="modal">
-        <button className="modal-close" onClick={() => set({ authModal: false })}>✕</button>
+        <button className="modal-close" onClick={close}>✕</button>
         <h2>{isForgot ? 'Reset Password' : isLogin ? 'Welcome Back' : 'Join StudySpace'}</h2>
-        <p className="modal-sub">{isForgot ? 'Enter your email for a reset link.' : isLogin ? 'Sign in to continue.' : DEMO_MODE ? 'Choose a role to explore:' : 'Create your free account.'}</p>
+        <p className="modal-sub">
+          {isForgot ? 'Enter your email to receive a reset link.'
+            : isLogin ? 'Sign in to continue.'
+            : DEMO_MODE ? 'Choose a role to explore the app:'
+            : 'Create your free account.'}
+        </p>
 
-        {mode === 'signup' && (
+        {mode === 'signup' && !DEMO_MODE && (
           <>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--mutedl)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.5px' }}>I am a...</div>
-            <div className="role-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
+            <div style={{ fontSize:12, fontWeight:700, color:'var(--mutedl)', marginBottom:8, textTransform:'uppercase', letterSpacing:'.5px' }}>I am a...</div>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:18 }}>
               {['student','owner'].map(r => (
                 <div key={r} onClick={() => set({ authRole: r })}
-                  style={{ padding: '16px 14px', borderRadius: 12, border: `1px solid ${role === r ? 'var(--red)' : 'var(--border)'}`, cursor: 'pointer', textAlign: 'center', background: role === r ? 'rgba(200,54,74,.07)' : 'var(--surface)' }}>
-                  <span style={{ fontSize: 28, display: 'block', marginBottom: 8 }}>{r === 'student' ? '📚' : '🏛️'}</span>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{r === 'student' ? 'Student' : 'Library Owner'}</div>
+                  style={{ padding:'16px 14px', borderRadius:12, cursor:'pointer', textAlign:'center',
+                    border:`1px solid ${role===r?'var(--red)':'var(--border)'}`,
+                    background: role===r?'rgba(200,54,74,.07)':'var(--surface)' }}>
+                  <span style={{ fontSize:28, display:'block', marginBottom:8 }}>{r==='student'?'📚':'🏛️'}</span>
+                  <div style={{ fontSize:13, fontWeight:600 }}>{r==='student'?'Student':'Library Owner'}</div>
                 </div>
               ))}
             </div>
@@ -127,28 +156,50 @@ export function AuthModal() {
 
         <form onSubmit={handleSubmit}>
           {DEMO_MODE ? (
-            <div style={{ background: 'rgba(200,54,74,.06)', border: '1px solid rgba(200,54,74,.15)', borderRadius: 12, padding: 20, textAlign: 'center' }}>
-              <p style={{ color: 'var(--mutedl)', fontSize: 14, marginBottom: 16 }}>Select a role to explore the full app:</p>
-              <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+            <div style={{ background:'rgba(200,54,74,.06)', border:'1px solid rgba(200,54,74,.15)', borderRadius:12, padding:20, textAlign:'center' }}>
+              <p style={{ color:'var(--mutedl)', fontSize:14, marginBottom:16 }}>Select a role to explore the full app:</p>
+              <div style={{ display:'flex', gap:10, justifyContent:'center', flexWrap:'wrap' }}>
                 <button type="button" className="btn-red btn-sm" onClick={() => demoLogin('student')}>📚 Enter as Student</button>
-                <button type="button" className="btn-outline btn-sm" style={{ padding: '8px 16px', fontSize: 12 }} onClick={() => demoLogin('owner')}>🏛️ Enter as Owner</button>
+                <button type="button" className="btn-outline btn-sm" style={{ padding:'8px 16px', fontSize:12 }} onClick={() => demoLogin('owner')}>🏛️ Enter as Owner</button>
               </div>
             </div>
           ) : (
             <>
-              {mode === 'signup' && <div className="form-group"><label>Full Name</label><input name="full_name" className="form-input" type="text" placeholder="Your full name" required /></div>}
-              <div className="form-group"><label>Email</label><input name="email" className="form-input" type="email" placeholder="you@example.com" required /></div>
-              {!isForgot && <div className="form-group"><label>Password</label><input name="password" className="form-input" type="password" minLength={6} placeholder={isLogin ? 'Your password' : 'Min. 6 characters'} required /></div>}
-              <button className="btn-red btn-block" type="submit">{isForgot ? 'Send Reset Link' : isLogin ? 'Sign In' : 'Create Account'}</button>
+              {mode === 'signup' && (
+                <div className="form-group">
+                  <label>Full Name</label>
+                  <input className="form-input" type="text" placeholder="Your full name"
+                    value={fullName} onChange={ev => setFullName(ev.target.value)} required />
+                </div>
+              )}
+              <div className="form-group">
+                <label>Email</label>
+                <input className="form-input" type="email" placeholder="you@example.com"
+                  value={email} onChange={ev => setEmail(ev.target.value)} required autoComplete="email" />
+              </div>
+              {!isForgot && (
+                <div className="form-group">
+                  <label>Password</label>
+                  <input className="form-input" type="password"
+                    placeholder={isLogin ? 'Your password' : 'Min. 6 characters'}
+                    value={password} onChange={ev => setPassword(ev.target.value)} required
+                    autoComplete={isLogin ? 'current-password' : 'new-password'} />
+                </div>
+              )}
+              <button className="btn-red btn-block" type="submit" disabled={busy}>
+                {busy ? 'Please wait...' : isForgot ? 'Send Reset Link' : isLogin ? 'Sign In' : 'Create Account'}
+              </button>
             </>
           )}
         </form>
 
         {!DEMO_MODE && (
-          <div className="modal-foot" style={{ marginTop: 14 }}>
-            {isForgot ? <a onClick={() => set({ authMode: 'login' })}>← Back to Sign In</a>
-              : isLogin ? <><span style={{ float: 'left' }}><a onClick={() => set({ authMode: 'forgot' })}>Forgot password?</a></span><span>New here? <a onClick={() => set({ authMode: 'signup' })}>Sign up free</a></span></>
-              : <>Already have an account? <a onClick={() => set({ authMode: 'login' })}>Sign in</a></>}
+          <div className="modal-foot" style={{ marginTop:14 }}>
+            {isForgot
+              ? <a onClick={() => set({ authMode:'login' })}>← Back to Sign In</a>
+              : isLogin
+                ? <><span style={{ float:'left' }}><a onClick={() => set({ authMode:'forgot' })}>Forgot password?</a></span><span>New here? <a onClick={() => set({ authMode:'signup' })}>Sign up free</a></span></>
+                : <>Already have an account? <a onClick={() => set({ authMode:'login' })}>Sign in</a></>}
           </div>
         )}
       </div>

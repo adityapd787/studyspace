@@ -236,6 +236,17 @@ export function Seats() {
   const total = S.selectedSeats.length * (lib?.price_per_hour || 0) * 3
   const shifts = lib ? computeShifts(lib) : []
   const toggleSeat = seat => set({ selectedSeats: S.selectedSeats.find(s => s.id === seat.id) ? S.selectedSeats.filter(s => s.id !== seat.id) : [...S.selectedSeats, seat] })
+  const [activeSeatFloor, setActiveSeatFloor] = useState(0)
+  const [activeSeatRoom,  setActiveSeatRoom]  = useState(0)
+  const today   = new Date().toISOString().split('T')[0]
+  const maxDate = (() => { const d = new Date(); d.setDate(d.getDate()+30); return d.toISOString().split('T')[0] })()
+  const floors  = lib?.floors_config
+  const currentFloor = floors?.[activeSeatFloor]
+  const currentRoom  = currentFloor?.rooms?.[activeSeatRoom]
+  const displaySeats = floors
+    ? S.seats.filter(s => s.floor === currentFloor?.name && s.room === currentRoom?.name)
+    : S.seats
+  const refetch = async (slot) => { set({ selectedSlot: slot, selectedSeats: [], loading: true }); await fetchSeats(lib.id); set({ loading: false }) }
 
   return (
     <div className="container-sm">
@@ -243,55 +254,105 @@ export function Seats() {
       <h1 className="page-title text-32">Select Your Seat</h1>
       <p className="page-sub">{lib?.name} · Live availability</p>
 
-      <div className="card p-24 mb-18">
-        <p className="section-label">1. Pick a Shift</p>
+      {/* 1. Date */}
+      <div className="card p-24 mb-14">
+        <p className="section-label">1. Choose a Date</p>
+        <div className="flex items-center gap-14 flex-wrap">
+          <input type="date" className="form-input" style={{ maxWidth:200, cursor:'pointer' }}
+            min={today} max={maxDate} value={S.selectedDate}
+            onChange={ev => set({ selectedDate: ev.target.value, selectedSlot: null, selectedSeats: [] })} />
+          <span className="text-sm c-muted">
+            {S.selectedDate === today ? '📅 Today' :
+              new Date(S.selectedDate+'T00:00:00').toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long'})}
+          </span>
+        </div>
+        <p className="hint-text">You can book up to 30 days in advance.</p>
+      </div>
+
+      {/* 2. Shift */}
+      <div className="card p-24 mb-14">
+        <p className="section-label">2. Pick a Shift</p>
         <div className="slot-row">
           {shifts.map(sh => (
             <button key={sh.slot} className={`slot-btn ${S.selectedSlot === sh.slot ? 'on' : ''}`}
-              onClick={async () => { set({ selectedSlot: sh.slot, selectedSeats: [], loading: true }); await fetchSeats(lib.id); set({ loading: false }) }}>
-              <span className="text-xs fw-700" style={{ opacity: .7, display: 'block' }}>{sh.dur}</span>
+              onClick={() => refetch(sh.slot)}>
+              <span className="text-xs fw-700" style={{ opacity:.7, display:'block' }}>{sh.dur}</span>
               {sh.slot}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="mb-14">
-        <p className="section-label">2. Choose Your Seat</p>
-        <div className="legend">
-          {SEAT_LEGEND.map(l => (
-            <div key={l.label} className="legend-item">
-              <div className="ldot" style={{ background: l.bg, ...(l.br && { border: `1px solid ${l.br}` }) }} />{l.label}
-            </div>
-          ))}
-        </div>
+      {/* 3. Seat */}
+      <p className="section-label">3. Choose Your Seat</p>
+      <div className="legend mb-14">
+        {SEAT_LEGEND.map(l => (
+          <div key={l.label} className="legend-item">
+            <div className="ldot" style={{ background: l.bg, ...(l.br && { border: `1px solid ${l.br}` }) }} />{l.label}
+          </div>
+        ))}
       </div>
 
       <div className="card p-28 mb-20">
+        {floors && floors.length > 0 && (
+          <div style={{ marginBottom:16, paddingBottom:14, borderBottom:'1px solid var(--borders)' }}>
+            <div className="flex gap-8 flex-wrap mb-8">
+              {floors.map((fl,fi) => (
+                <button key={fi} onClick={() => { setActiveSeatFloor(fi); setActiveSeatRoom(0) }}
+                  style={{ padding:'5px 14px', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer',
+                    border:`1.5px solid ${fi===activeSeatFloor?'var(--red)':'var(--border)'}`,
+                    background: fi===activeSeatFloor?'var(--red)':'transparent',
+                    color: fi===activeSeatFloor?'white':'var(--mutedl)' }}>
+                  {fl.name}
+                </button>
+              ))}
+            </div>
+            {currentFloor?.rooms?.length > 1 && (
+              <div className="flex gap-6 flex-wrap">
+                {currentFloor.rooms.map((rm,ri) => (
+                  <button key={ri} onClick={() => setActiveSeatRoom(ri)}
+                    style={{ padding:'4px 12px', borderRadius:7, fontSize:12, fontWeight:600, cursor:'pointer',
+                      border:`1.5px solid ${ri===activeSeatRoom?'rgba(200,54,74,.6)':'var(--border)'}`,
+                      background: ri===activeSeatRoom?'rgba(200,54,74,.1)':'transparent',
+                      color: ri===activeSeatRoom?'var(--red)':'var(--mutedl)' }}>
+                    {rm.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         <div className="entrance">── ENTRANCE / FRONT ──</div>
-        {S.loading ? <div className="loader"><div className="spinner" /><p>Loading live seat data...</p></div>
-          : S.seats.length ? <div className="seat-map-wrap"><SeatLayout seats={S.seats} layoutConfig={lib?.layout_config} blockedSeats={lib?.blocked_seats} selectedSeats={S.selectedSeats} onSelect={toggleSeat} /></div>
-          : <p className="c-muted text-center p-20">Select a shift to see live availability.</p>}
+        {!S.selectedSlot
+          ? <p className="c-muted text-center p-20">Select a shift above to see availability.</p>
+          : S.loading
+            ? <div className="loader"><div className="spinner" /><p>Loading seats...</p></div>
+            : displaySeats.length
+              ? <div className="seat-map-wrap"><SeatLayout seats={displaySeats} layoutConfig={lib?.layout_config} blockedSeats={lib?.blocked_seats} selectedSeats={S.selectedSeats} onSelect={toggleSeat} /></div>
+              : <p className="c-muted text-center p-20">No seats for this floor/room.</p>}
       </div>
 
       {can && (
         <div className="sel-bar">
           <div>
-            <p className="text-sm c-muted mb-4">Seats: <strong className="c-text">{S.selectedSeats.map(s => `${s.row_label}${s.seat_number}`).join(', ')}</strong></p>
-            <p className="text-sm c-muted">Shift: <strong className="c-text">{S.selectedSlot}</strong></p>
+            <p className="text-sm c-muted mb-4">Seats: <strong className="c-text">{S.selectedSeats.map(s=>`${s.row_label}${s.seat_number}`).join(', ')}</strong></p>
+            <p className="text-sm c-muted">
+              {fmtDate(S.selectedDate)} · <strong className="c-text">{S.selectedSlot}</strong>
+            </p>
           </div>
           <div className="text-right">
             <big className="font-serif c-red text-30 lh-1" style={{ display:'block' }}>₹{total}</big>
-            <small className="c-muted text-sm">{S.selectedSeats.length} seat{S.selectedSeats.length > 1 ? 's' : ''}</small>
+            <small className="c-muted text-sm">{S.selectedSeats.length} seat{S.selectedSeats.length>1?'s':''}</small>
           </div>
         </div>
       )}
-      <button className="btn-red btn-block" disabled={!can} style={!can ? { opacity: .45, cursor: 'not-allowed' } : {}} onClick={() => can && go('booking')}>
-        {can ? 'Proceed to Booking →' : 'Select a shift and at least one seat'}
+      <button className="btn-red btn-block" disabled={!can} style={!can?{opacity:.45,cursor:'not-allowed'}:{}} onClick={() => can && go('booking')}>
+        {can ? 'Proceed to Booking →' : 'Select a date, shift, and at least one seat'}
       </button>
     </div>
   )
 }
+
 
 // ── BOOKING ───────────────────────────────────────────────────
 export function Booking() {
@@ -327,7 +388,7 @@ export function Booking() {
 
   const summaryRows = isSubscription
     ? [['Library', lib?.name], ['Plan', planObj.label], ['Duration', `${durMonths} month${durMonths > 1 ? 's' : ''}`], ['Valid Until', endDate()]]
-    : [['Library', lib?.name], ['Seats', S.selectedSeats.map(s=>`${s.row_label}${s.seat_number}`).join(', ')], ['Shift', S.selectedSlot || '—']]
+    : [['Library', lib?.name], ['Date', fmtDate(S.selectedDate)], ['Seats', S.selectedSeats.map(s=>`${s.row_label}${s.seat_number}`).join(', ')], ['Shift', S.selectedSlot || '—']]
 
   return (
     <div className="container-sm">
@@ -403,6 +464,21 @@ export function StudentDash() {
                 <div className="c-muted text-sm mt-4">{PLAN_LABELS[s.plan] || s.plan} · Valid until {fmtDate(s.end_date)} · ₹{(s.amount||0).toLocaleString('en-IN')}</div>
               </div>
               <span className="spill pill-green">✓ Active</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {S.announcements?.length > 0 && (
+        <div className="card p-26 mb-20">
+          <div className="sec-hd"><h2>📢 Announcements</h2></div>
+          {S.announcements.map(ann => (
+            <div key={ann.id} style={{ padding:'14px 0', borderBottom:'1px solid var(--borders)' }}>
+              <div className="flex justify-between items-center flex-wrap gap-8 mb-6">
+                <span className="fw-600 text-md">{ann.lib_name || ann.library?.name}</span>
+                <span className="text-sm c-muted">{fmtDate((ann.created_at||'').split('T')[0])}</span>
+              </div>
+              <p className="c-muted lh-16 text-md">{ann.message}</p>
             </div>
           ))}
         </div>
