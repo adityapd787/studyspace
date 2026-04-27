@@ -1,4 +1,28 @@
-import { useEffect } from 'react'
+import { useEffect, Component } from 'react'
+
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null } }
+  static getDerivedStateFromError(err) { return { error: err } }
+  componentDidCatch(err, info) { console.error('StudySpace crash:', err, info) }
+  render() {
+    if (this.state.error) return (
+      <div style={{padding:40,fontFamily:'DM Sans,sans-serif',maxWidth:600,margin:'60px auto',textAlign:'center'}}>
+        <div style={{fontSize:48,marginBottom:16}}>⚠️</div>
+        <h2 style={{fontFamily:'Cormorant Garamond,serif',fontSize:28,marginBottom:12}}>Something went wrong</h2>
+        <p style={{color:'#7A5040',marginBottom:24,lineHeight:1.6}}>{this.state.error.message}</p>
+        <button onClick={()=>window.location.reload()}
+          style={{background:'#C8364A',color:'white',border:'none',padding:'12px 28px',borderRadius:10,cursor:'pointer',fontSize:15}}>
+          Reload App
+        </button>
+        <details style={{marginTop:20,textAlign:'left',fontSize:12,color:'#999'}}>
+          <summary style={{cursor:'pointer'}}>Technical details</summary>
+          <pre style={{marginTop:8,padding:12,background:'#f5f0eb',borderRadius:8,overflow:'auto'}}>{this.state.error.stack}</pre>
+        </details>
+      </div>
+    )
+    return this.props.children
+  }
+}
 import { AppProvider, useApp } from './lib/AppContext'
 import { DEMO_MODE } from './lib/supabase'
 import { Nav, AuthModal, ReviewModal, toast } from './components/shared'
@@ -37,5 +61,5 @@ function AppInner() {
 }
 
 export default function App() {
-  return <AppProvider><AppInner /></AppProvider>
+  return <ErrorBoundary><AppProvider><AppInner /></AppProvider></ErrorBoundary>
 }

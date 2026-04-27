@@ -36,6 +36,22 @@ export function AppProvider({ children }) {
 
   // ── helpers ──────────────────────────────────────────────────
   const todayStr = () => new Date().toISOString().split('T')[0]
+  const cloneFloorsConfig = (floorsConfig) => {
+    if (!Array.isArray(floorsConfig) || floorsConfig.length === 0) return null
+    return floorsConfig.map((fl, fi) => ({
+      ...fl,
+      id: fl?.id || `f${fi + 1}`,
+      name: fl?.name || `Floor ${fi + 1}`,
+      rooms: Array.isArray(fl?.rooms)
+        ? fl.rooms.map((rm, ri) => ({
+            ...rm,
+            id: rm?.id || `r${fi + 1}-${ri + 1}`,
+            name: rm?.name || `Room ${ri + 1}`,
+            seats: Array.isArray(rm?.seats) ? rm.seats.map(s => ({ ...s })) : [],
+          }))
+        : [{ id: `r${fi + 1}-1`, name: 'Main Hall', seats: [], cols: 20, rows: 14, px: 5, py: 10, pw: 38, ph: 42 }],
+    }))
+  }
 
   // ── AUTH ─────────────────────────────────────────────────────
   const demoLogin = (role) => {
@@ -126,7 +142,10 @@ export function AppProvider({ children }) {
         .eq('library_id', lib.id).order('created_at', { ascending: false }).limit(50)
       const { data: seats } = await sb.from('seats').select('*').eq('library_id', lib.id)
         .order('row_label').order('seat_number')
-      set({ ownerBookings: bks || [], ownerSeats: seats || [] })
+      // Restore gridFloors from saved floors_config so seat editor loads saved layout
+      const restoredFloors = cloneFloorsConfig(lib.floors_config)
+      set({ ownerBookings: bks || [], ownerSeats: seats || [],
+            gridFloors: restoredFloors, activeFloor: 0, activeRoom: 0 })
     }
     set({ loading: false })
   }
@@ -210,8 +229,17 @@ export function AppProvider({ children }) {
 
   const saveLibrary = async (data) => {
     if (DEMO_MODE) {
-      if (S.ownerLibrary) { setS(prev => ({ ...prev, ownerLibrary: { ...prev.ownerLibrary, ...data } })) }
-      else { setS(prev => ({ ...prev, ownerLibrary: { ...data, id:'l-new', owner_id:'demo-owner-1', rating:5.0, reviews_count:0, is_active:true }, ownerSeats: makeDemoSeats('l-new') })) }
+      // Restore gridFloors from saved floors_config so editor reloads correctly
+      const restoredFloors = cloneFloorsConfig(data.floors_config)
+      if (S.ownerLibrary) {
+        setS(prev => ({ ...prev, ownerLibrary: { ...prev.ownerLibrary, ...data },
+          gridFloors: restoredFloors || prev.gridFloors }))
+      } else {
+        setS(prev => ({ ...prev,
+          ownerLibrary: { ...data, id:'l-new', owner_id:'demo-owner-1', rating:5.0, reviews_count:0, is_active:true },
+          ownerSeats: makeDemoSeats('l-new'),
+          gridFloors: restoredFloors }))
+      }
       return true
     }
     if (S.ownerLibrary) {
@@ -222,6 +250,7 @@ export function AppProvider({ children }) {
       if (error) return false
       set({ ownerLibrary: lib })
     }
+    // fetchOwnerData will also restore gridFloors from floors_config
     await fetchOwnerData()
     return true
   }
