@@ -307,13 +307,13 @@ export function EditLibrary() {
       amenities,
       photos: photos.filter(u => u?.trim()),
     }
-    const ok = await saveLibrary(data)
-    if (ok) {
+    const res = await saveLibrary(data)
+    if (res?.ok) {
       set({ addLibAmenities: [], addLibPhotos: [''] })
       toast('✅ Library saved!')
       go('owner-dash')
     } else {
-      toast('Save failed — check your connection', 'error')
+      toast('Save failed: ' + (res?.error || 'check your connection'), 'error')
     }
     setBusy(false)
   }
@@ -728,9 +728,9 @@ export function SeatEditor() {
         px:rm.px,py:rm.py,pw:rm.pw,ph:rm.ph,
         seats:rm.seats.map(s=>({r:s.r,c:s.c,label:s.label,status:s.status}))}))}))
     const allSeats=[]; floors_config.forEach(f=>f.rooms.forEach(rm=>rm.seats.forEach(s=>allSeats.push(s))))
-    const ok=await saveLibrary({...lib,floors_config,seat_grid:floors_config[0]?.rooms[0]?.seats||[],total_seats:allSeats.length})
-    if(ok){toast(`✅ Layout saved! (${allSeats.length} seats total)`);go('owner-dash')}
-    else toast('Save failed','error')
+    const res = await saveLibrary({...lib,floors_config,seat_grid:floors_config[0]?.rooms[0]?.seats||[],total_seats:allSeats.length})
+    if(res?.ok){toast(`✅ Layout saved! (${allSeats.length} seats total)`);go('owner-dash')}
+    else toast('Save failed: ' + (res?.error || 'Unknown error'), 'error')
   }
 
   if(!S.gridFloors) return <div className="loader"><div className="spinner"/><p>Loading editor...</p></div>

@@ -220,6 +220,23 @@ create or replace trigger on_auth_user_created
       - Canvas-local lock while dragging remains in place.
   - Validation:
     - Ran `npm run build` successfully after this adjustment.
+- 2026-04-27 21:00:57 +05:30 (IST): Improved EditLibrary save reliability and error visibility:
+  - `src/lib/AppContext.jsx`:
+    - Updated `saveLibrary()` to normalize shift duration values before DB write.
+    - Added compatibility retry path for legacy schemas (retries save after removing newer columns if DB reports unknown-column/schema-cache errors).
+    - Changed return shape to `{ ok, error }` so callers can show the actual failure reason.
+  - `src/pages/OwnerPages.jsx`:
+    - Updated `EditLibrary` save submit path to use `res.ok` and display detailed failure message from `res.error`.
+    - Updated `SeatEditor` save path to the same `{ ok, error }` response handling.
+  - Validation:
+    - Ran `npm run build` successfully after changes.
+- 2026-04-27 21:07:55 +05:30 (IST): Switched EditLibrary save behavior to strict production-grade schema enforcement:
+  - `src/lib/AppContext.jsx`:
+    - Removed legacy schema-downgrade retry logic from `saveLibrary()` (no silent field dropping).
+    - Added explicit schema-mismatch error shaping for missing-column/schema-cache failures.
+    - Save now fails loudly with actionable migration-required error instead of pretending success.
+  - Validation:
+    - Ran `npm run build` successfully after this change.
 
 ### Claude acknowledgement required on next read
 - On the next request to read this file, Claude must include this exact line first:

@@ -37,7 +37,7 @@ export function Landing() {
         </div>
       </section>
 
-      <section className="lp-sec alt">
+      <section className="lp-sec alt how-it-works">
         <div className="container-mid">
           <h2 className="sec-title">How It Works</h2>
           <p className="sec-sub">From search to seat in under 60 seconds.</p>

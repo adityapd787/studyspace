@@ -228,31 +228,53 @@ export function AppProvider({ children }) {
   }
 
   const saveLibrary = async (data) => {
+    const normalized = {
+      ...data,
+      shift_durations: Array.isArray(data.shift_durations)
+        ? data.shift_durations.map(n => parseInt(n, 10)).filter(Number.isFinite)
+        : data.shift_durations,
+      shift_duration: data.shift_duration == null ? data.shift_duration : (parseInt(data.shift_duration, 10) || 3),
+    }
+    if (Array.isArray(normalized.shift_durations) && normalized.shift_durations.length === 0) {
+      normalized.shift_durations = [3]
+    }
+    const isSchemaColumnError = (err) => {
+      const msg = (err?.message || '').toLowerCase()
+      return msg.includes('column') && (msg.includes('does not exist') || msg.includes('schema cache'))
+    }
+    const buildSchemaError = (err) => {
+      const raw = err?.message || 'Database schema mismatch'
+      return `Database schema mismatch: ${raw}. Please run the required Supabase migration SQL and retry.`
+    }
+
     if (DEMO_MODE) {
       // Restore gridFloors from saved floors_config so editor reloads correctly
-      const restoredFloors = cloneFloorsConfig(data.floors_config)
+      const restoredFloors = cloneFloorsConfig(normalized.floors_config)
       if (S.ownerLibrary) {
-        setS(prev => ({ ...prev, ownerLibrary: { ...prev.ownerLibrary, ...data },
+        setS(prev => ({ ...prev, ownerLibrary: { ...prev.ownerLibrary, ...normalized },
           gridFloors: restoredFloors || prev.gridFloors }))
       } else {
         setS(prev => ({ ...prev,
-          ownerLibrary: { ...data, id:'l-new', owner_id:'demo-owner-1', rating:5.0, reviews_count:0, is_active:true },
+          ownerLibrary: { ...normalized, id:'l-new', owner_id:'demo-owner-1', rating:5.0, reviews_count:0, is_active:true },
           ownerSeats: makeDemoSeats('l-new'),
           gridFloors: restoredFloors }))
       }
-      return true
+      return { ok: true, error: null }
     }
     if (S.ownerLibrary) {
-      const { error } = await sb.from('libraries').update(data).eq('id', S.ownerLibrary.id)
-      if (error) return false
+      const { error } = await sb.from('libraries').update(normalized).eq('id', S.ownerLibrary.id)
+      if (error && isSchemaColumnError(error)) return { ok: false, error: buildSchemaError(error) }
+      if (error) return { ok: false, error: error.message || 'Save failed' }
     } else {
-      const { data: lib, error } = await sb.from('libraries').insert({ ...data, owner_id: S.user.id }).select().single()
-      if (error) return false
+      const created = await sb.from('libraries').insert({ ...normalized, owner_id: S.user.id }).select().single()
+      if (created.error && isSchemaColumnError(created.error)) return { ok: false, error: buildSchemaError(created.error) }
+      if (created.error) return { ok: false, error: created.error.message || 'Save failed' }
+      const lib = created.data
       set({ ownerLibrary: lib })
     }
     // fetchOwnerData will also restore gridFloors from floors_config
     await fetchOwnerData()
-    return true
+    return { ok: true, error: null }
   }
 
   const sendAnnouncement = async (message) => {
