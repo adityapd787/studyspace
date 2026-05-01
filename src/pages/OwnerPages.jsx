@@ -260,6 +260,11 @@ export function EditLibrary() {
   const [price3,   setPrice3]   = useState(lib?.price_3monthly || '')
   const [price6,   setPrice6]   = useState(lib?.price_6monthly || '')
   const [priceA,   setPriceA]   = useState(lib?.price_annual   || '')
+  const [discHr,   setDiscHr]   = useState(lib?.discount_shift    != null ? String(lib.discount_shift)    : null)
+  const [discM,    setDiscM]    = useState(lib?.discount_monthly  != null ? String(lib.discount_monthly)  : null)
+  const [disc3,    setDisc3]    = useState(lib?.discount_3monthly != null ? String(lib.discount_3monthly) : null)
+  const [disc6,    setDisc6]    = useState(lib?.discount_6monthly != null ? String(lib.discount_6monthly) : null)
+  const [discA,    setDiscA]    = useState(lib?.discount_annual   != null ? String(lib.discount_annual)   : null)
   const [openT,    setOpenT]    = useState(S.addLibOpen  || lib?.hours_open  || '06:00')
   const [closeT,   setCloseT]   = useState(S.addLibClose || lib?.hours_close || '22:00')
   const [shifts,   setShifts]   = useState(Array.isArray(S.addLibShift) ? S.addLibShift : (lib?.shift_durations || [3]))
@@ -281,13 +286,11 @@ export function EditLibrary() {
   const editorSeatCount = (S.gridFloors || []).reduce((a, fl) => a + fl.rooms.reduce((b, rm) => b + rm.seats.length, 0), 0)
   const totalSeats = editorSeatCount > 0 ? editorSeatCount : (parseInt(lib?.total_seats) || 0)
 
-  const toggleShift = h => setShifts(prev => {
-    const has = prev.includes(h)
-    if (has && prev.length <= 1) return prev
-    const next = has ? prev.filter(x => x !== h) : [...prev, h]
+  const toggleShift = h => {
+    const next = [h]
+    setShifts(next)
     setCustomShifts(buildDefaultShifts(openT, closeT, next))
-    return next
-  })
+  }
 
   // ── Photo from device / camera ────────────────────────────────
   const handlePhotoFile = async (file, idx) => {
@@ -324,11 +327,16 @@ export function EditLibrary() {
     setBusy(true)
     const data = {
       name: name.trim(), tag, tag_color: TAG_COLORS[tag],
-      price_per_hour:  parseInt(priceHr) || 0,
-      price_monthly:   parseInt(priceM)  || null,
-      price_3monthly:  parseInt(price3)  || null,
-      price_6monthly:  parseInt(price6)  || null,
-      price_annual:    parseInt(priceA)  || null,
+      price_per_hour:    parseInt(priceHr) || 0,
+      price_monthly:     parseInt(priceM)  || null,
+      price_3monthly:    parseInt(price3)  || null,
+      price_6monthly:    parseInt(price6)  || null,
+      price_annual:      parseInt(priceA)  || null,
+      discount_shift:    discHr !== null && discHr !== '' ? parseInt(discHr)   : null,
+      discount_monthly:  discM  !== null && discM  !== '' ? parseInt(discM)    : null,
+      discount_3monthly: disc3  !== null && disc3  !== '' ? parseInt(disc3)    : null,
+      discount_6monthly: disc6  !== null && disc6  !== '' ? parseInt(disc6)    : null,
+      discount_annual:   discA  !== null && discA  !== '' ? parseInt(discA)    : null,
       location: location.trim(),
       total_seats: totalSeats,
       hours: openT + ' – ' + closeT,
@@ -415,6 +423,9 @@ export function EditLibrary() {
             <div className="form-group">
               <label>Google Maps Link <span style={{ fontWeight:400, textTransform:'none', letterSpacing:0 }}>(optional)</span></label>
               <input className="form-input" type="url" placeholder="https://maps.google.com/?q=..." value={mapsUrl} onChange={ev => setMapsUrl(ev.target.value)} />
+              <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location || name || '')}`} target="_blank" rel="noopener noreferrer" style={{ display:'inline-flex', alignItems:'center', gap:5, marginTop:6, fontSize:12, fontWeight:600, color:'var(--blue)', textDecoration:'none' }}>
+                📍 Open Google Maps to find your library →
+              </a>
             </div>
           </div>
 
@@ -431,31 +442,106 @@ export function EditLibrary() {
           {/* ── Pricing ─────────────────────────────────────────── */}
           <div className="field-section">
             <h3>Pricing</h3>
-            <p className="c-muted text-md mb-20">Set a per-shift price first, then optionally offer subscription plans.</p>
+            <p className="c-muted text-md mb-20">Set a per-shift price first, then optionally offer subscription plans. Add a discount to show a sale price to students.</p>
             <div className="form-row">
               <div className="form-group">
                 <label>Price per Shift (₹) *</label>
-                <input className="form-input" type="number" min="1" placeholder="e.g. 60" value={priceHr} onChange={ev => setPriceHr(ev.target.value)} />
+                <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                  <input className="form-input" type="number" min="1" placeholder="e.g. 60" value={priceHr} onChange={ev => setPriceHr(ev.target.value)} style={{ flex:1 }} />
+                  {discHr === null
+                    ? <button type="button" style={{ flexShrink:0, background:'none', border:'1px dashed var(--border)', borderRadius:8, padding:'6px 10px', fontSize:11, fontWeight:600, color:'var(--mutedl)', cursor:'pointer', whiteSpace:'nowrap' }} onClick={() => setDiscHr('')}>⊕ Discount</button>
+                    : <button type="button" style={{ flexShrink:0, background:'none', border:'1px solid var(--border)', borderRadius:8, padding:'6px 10px', fontSize:11, fontWeight:600, color:'var(--muted)', cursor:'pointer', whiteSpace:'nowrap' }} onClick={() => setDiscHr(null)}>✕ Remove</button>
+                  }
+                </div>
                 <p className="form-hint">Charged per shift booking.</p>
+                {discHr !== null && (
+                  <div style={{ marginTop:8, padding:'10px 12px', background:'var(--surface)', borderRadius:10, border:'1px solid var(--border)' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:6 }}>
+                      <span style={{ fontSize:10, fontWeight:800, color:'var(--mutedl)', textTransform:'uppercase', letterSpacing:.8, flex:1 }}>Discounted Price (₹)</span>
+                      {discHr && priceHr && parseInt(discHr) > 0 && parseInt(discHr) < parseInt(priceHr) && <span style={{ background:'var(--green)', color:'white', fontSize:10, fontWeight:800, padding:'2px 8px', borderRadius:12 }}>{Math.round((1 - parseInt(discHr)/parseInt(priceHr))*100)}% OFF</span>}
+                    </div>
+                    <input className="form-input" type="number" min="1" value={discHr} onChange={ev => setDiscHr(ev.target.value)} placeholder={priceHr ? String(Math.round(parseInt(priceHr)*0.9)) : 'e.g. 55'} />
+                  </div>
+                )}
               </div>
               <div className="form-group">
                 <label>Monthly Plan (₹)</label>
-                <input className="form-input" type="number" min="1" placeholder="e.g. 1800" value={priceM} onChange={ev => setPriceM(ev.target.value)} />
+                <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                  <input className="form-input" type="number" min="1" placeholder="e.g. 1800" value={priceM} onChange={ev => setPriceM(ev.target.value)} style={{ flex:1 }} />
+                  {discM === null
+                    ? <button type="button" style={{ flexShrink:0, background:'none', border:'1px dashed var(--border)', borderRadius:8, padding:'6px 10px', fontSize:11, fontWeight:600, color:'var(--mutedl)', cursor:'pointer', whiteSpace:'nowrap' }} onClick={() => setDiscM('')}>⊕ Discount</button>
+                    : <button type="button" style={{ flexShrink:0, background:'none', border:'1px solid var(--border)', borderRadius:8, padding:'6px 10px', fontSize:11, fontWeight:600, color:'var(--muted)', cursor:'pointer', whiteSpace:'nowrap' }} onClick={() => setDiscM(null)}>✕ Remove</button>
+                  }
+                </div>
+                {discM !== null && (
+                  <div style={{ marginTop:8, padding:'10px 12px', background:'var(--surface)', borderRadius:10, border:'1px solid var(--border)' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:6 }}>
+                      <span style={{ fontSize:10, fontWeight:800, color:'var(--mutedl)', textTransform:'uppercase', letterSpacing:.8, flex:1 }}>Discounted Price (₹)</span>
+                      {discM && priceM && parseInt(discM) > 0 && parseInt(discM) < parseInt(priceM) && <span style={{ background:'var(--green)', color:'white', fontSize:10, fontWeight:800, padding:'2px 8px', borderRadius:12 }}>{Math.round((1 - parseInt(discM)/parseInt(priceM))*100)}% OFF</span>}
+                    </div>
+                    <input className="form-input" type="number" min="1" value={discM} onChange={ev => setDiscM(ev.target.value)} placeholder={priceM ? String(Math.round(parseInt(priceM)*0.9)) : 'e.g. 1620'} />
+                  </div>
+                )}
               </div>
             </div>
             <div className="form-row">
               <div className="form-group">
                 <label>3-Month Plan (₹)</label>
-                <input className="form-input" type="number" min="1" placeholder="e.g. 4999" value={price3} onChange={ev => setPrice3(ev.target.value)} />
+                <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                  <input className="form-input" type="number" min="1" placeholder="e.g. 4999" value={price3} onChange={ev => setPrice3(ev.target.value)} style={{ flex:1 }} />
+                  {disc3 === null
+                    ? <button type="button" style={{ flexShrink:0, background:'none', border:'1px dashed var(--border)', borderRadius:8, padding:'6px 10px', fontSize:11, fontWeight:600, color:'var(--mutedl)', cursor:'pointer', whiteSpace:'nowrap' }} onClick={() => setDisc3('')}>⊕ Discount</button>
+                    : <button type="button" style={{ flexShrink:0, background:'none', border:'1px solid var(--border)', borderRadius:8, padding:'6px 10px', fontSize:11, fontWeight:600, color:'var(--muted)', cursor:'pointer', whiteSpace:'nowrap' }} onClick={() => setDisc3(null)}>✕ Remove</button>
+                  }
+                </div>
+                {disc3 !== null && (
+                  <div style={{ marginTop:8, padding:'10px 12px', background:'var(--surface)', borderRadius:10, border:'1px solid var(--border)' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:6 }}>
+                      <span style={{ fontSize:10, fontWeight:800, color:'var(--mutedl)', textTransform:'uppercase', letterSpacing:.8, flex:1 }}>Discounted Price (₹)</span>
+                      {disc3 && price3 && parseInt(disc3) > 0 && parseInt(disc3) < parseInt(price3) && <span style={{ background:'var(--green)', color:'white', fontSize:10, fontWeight:800, padding:'2px 8px', borderRadius:12 }}>{Math.round((1 - parseInt(disc3)/parseInt(price3))*100)}% OFF</span>}
+                    </div>
+                    <input className="form-input" type="number" min="1" value={disc3} onChange={ev => setDisc3(ev.target.value)} placeholder={price3 ? String(Math.round(parseInt(price3)*0.9)) : 'e.g. 4499'} />
+                  </div>
+                )}
               </div>
               <div className="form-group">
                 <label>6-Month Plan (₹)</label>
-                <input className="form-input" type="number" min="1" placeholder="e.g. 8999" value={price6} onChange={ev => setPrice6(ev.target.value)} />
+                <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                  <input className="form-input" type="number" min="1" placeholder="e.g. 8999" value={price6} onChange={ev => setPrice6(ev.target.value)} style={{ flex:1 }} />
+                  {disc6 === null
+                    ? <button type="button" style={{ flexShrink:0, background:'none', border:'1px dashed var(--border)', borderRadius:8, padding:'6px 10px', fontSize:11, fontWeight:600, color:'var(--mutedl)', cursor:'pointer', whiteSpace:'nowrap' }} onClick={() => setDisc6('')}>⊕ Discount</button>
+                    : <button type="button" style={{ flexShrink:0, background:'none', border:'1px solid var(--border)', borderRadius:8, padding:'6px 10px', fontSize:11, fontWeight:600, color:'var(--muted)', cursor:'pointer', whiteSpace:'nowrap' }} onClick={() => setDisc6(null)}>✕ Remove</button>
+                  }
+                </div>
+                {disc6 !== null && (
+                  <div style={{ marginTop:8, padding:'10px 12px', background:'var(--surface)', borderRadius:10, border:'1px solid var(--border)' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:6 }}>
+                      <span style={{ fontSize:10, fontWeight:800, color:'var(--mutedl)', textTransform:'uppercase', letterSpacing:.8, flex:1 }}>Discounted Price (₹)</span>
+                      {disc6 && price6 && parseInt(disc6) > 0 && parseInt(disc6) < parseInt(price6) && <span style={{ background:'var(--green)', color:'white', fontSize:10, fontWeight:800, padding:'2px 8px', borderRadius:12 }}>{Math.round((1 - parseInt(disc6)/parseInt(price6))*100)}% OFF</span>}
+                    </div>
+                    <input className="form-input" type="number" min="1" value={disc6} onChange={ev => setDisc6(ev.target.value)} placeholder={price6 ? String(Math.round(parseInt(price6)*0.9)) : 'e.g. 8099'} />
+                  </div>
+                )}
               </div>
             </div>
             <div className="form-group" style={{ maxWidth:'calc(50% - 7px)' }}>
               <label>Annual Plan (₹)</label>
-              <input className="form-input" type="number" min="1" placeholder="e.g. 15999" value={priceA} onChange={ev => setPriceA(ev.target.value)} />
+              <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                <input className="form-input" type="number" min="1" placeholder="e.g. 15999" value={priceA} onChange={ev => setPriceA(ev.target.value)} style={{ flex:1 }} />
+                {discA === null
+                  ? <button type="button" style={{ flexShrink:0, background:'none', border:'1px dashed var(--border)', borderRadius:8, padding:'6px 10px', fontSize:11, fontWeight:600, color:'var(--mutedl)', cursor:'pointer', whiteSpace:'nowrap' }} onClick={() => setDiscA('')}>⊕ Discount</button>
+                  : <button type="button" style={{ flexShrink:0, background:'none', border:'1px solid var(--border)', borderRadius:8, padding:'6px 10px', fontSize:11, fontWeight:600, color:'var(--muted)', cursor:'pointer', whiteSpace:'nowrap' }} onClick={() => setDiscA(null)}>✕ Remove</button>
+                }
+              </div>
+              {discA !== null && (
+                <div style={{ marginTop:8, padding:'10px 12px', background:'var(--surface)', borderRadius:10, border:'1px solid var(--border)' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:6 }}>
+                    <span style={{ fontSize:10, fontWeight:800, color:'var(--mutedl)', textTransform:'uppercase', letterSpacing:.8, flex:1 }}>Discounted Price (₹)</span>
+                    {discA && priceA && parseInt(discA) > 0 && parseInt(discA) < parseInt(priceA) && <span style={{ background:'var(--green)', color:'white', fontSize:10, fontWeight:800, padding:'2px 8px', borderRadius:12 }}>{Math.round((1 - parseInt(discA)/parseInt(priceA))*100)}% OFF</span>}
+                  </div>
+                  <input className="form-input" type="number" min="1" value={discA} onChange={ev => setDiscA(ev.target.value)} placeholder={priceA ? String(Math.round(parseInt(priceA)*0.9)) : 'e.g. 14399'} />
+                </div>
+              )}
             </div>
           </div>
 
@@ -531,6 +617,8 @@ function ShiftTimelineEditor({ open, close, customShifts, setCustomShifts }) {
   const { openM, closeM, totalM } = parseRange(open, close)
   const PALETTE = ['#C8364A','#2A72B5','#1AA882','#C4860A','#7B3FA0']
   const tickCount = Math.min(Math.floor(totalM/60)+1, 13)
+  const barRef = useRef(null)
+  const dragDiv = useRef(null)
 
   const updateShift = (i, field, val) =>
     setCustomShifts(customShifts.map((s,j) => j===i ? {...s,[field]:val} : s))
@@ -540,61 +628,170 @@ function ShiftTimelineEditor({ open, close, customShifts, setCustomShifts }) {
     setCustomShifts([...customShifts, { start: last?.end || open, end: close }])
   }
 
+  const startDividerDrag = (idx, clientX) => {
+    const bar = barRef.current
+    if (!bar || !customShifts[idx] || !customShifts[idx+1]) return
+    const s0 = customShifts[idx], s1 = customShifts[idx+1]
+    const absM = (timeStr, refM) => { let m = toM(timeStr); while (m < refM) m += 1440; return m }
+    const s0StartM = absM(s0.start, openM)
+    const s1StartM = absM(s1.start, openM)
+    const s1EndM   = absM(s1.end, s1StartM)
+    dragDiv.current = { idx, minBoundM: s0StartM + 15, maxBoundM: s1EndM - 15 }
+
+    const onMove = x => {
+      if (!dragDiv.current || !barRef.current) return
+      const rect = barRef.current.getBoundingClientRect()
+      let newM = openM + ((x - rect.left) / rect.width) * totalM
+      newM = Math.round(newM / 15) * 15
+      newM = Math.max(dragDiv.current.minBoundM, Math.min(dragDiv.current.maxBoundM, newM))
+      const t = fmtMins(newM)
+      setCustomShifts(prev => prev.map((s, j) => {
+        if (j === dragDiv.current.idx)     return { ...s, end: t }
+        if (j === dragDiv.current.idx + 1) return { ...s, start: t }
+        return s
+      }))
+    }
+    const onMouseMove = ev => onMove(ev.clientX)
+    const onTouchMv   = ev => { ev.preventDefault(); onMove(ev.touches[0].clientX) }
+    const cleanup = () => {
+      dragDiv.current = null
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', cleanup)
+      document.removeEventListener('touchmove', onTouchMv)
+      document.removeEventListener('touchend', cleanup)
+    }
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', cleanup)
+    document.addEventListener('touchmove', onTouchMv, { passive: false })
+    document.addEventListener('touchend', cleanup)
+  }
+
   if (!customShifts.length || totalM <= 0) return null
 
   return (
     <div style={{ marginTop:18 }}>
-      <div className="flex items-center gap-8 mb-8">
-        <span className="text-xs fw-700 c-muted uppercase tracking-wide">Shift Timeline</span>
-        <span className="text-sm c-hint">{open} – {close} · {customShifts.length} slot{customShifts.length!==1?'s':''}</span>
-      </div>
+      <div style={{ background:'var(--card)', borderRadius:16, border:'1px solid var(--border)', boxShadow:'0 4px 24px var(--shadow)', overflow:'hidden' }}>
 
-      {/* Tick labels */}
-      <div className="flex items-center gap-10 mb-4">
-        <div style={{ width:8, flexShrink:0 }} />
-        <div style={{ flex:1, position:'relative', height:14 }}>
-          {Array.from({length:tickCount},(_,t) => {
-            const pct=(t*60/totalM)*100; if(pct>100) return null
-            return <div key={t} style={{ position:'absolute',left:pct+'%',transform:'translateX(-50%)',fontSize:9,color:'var(--muted)',fontWeight:600,whiteSpace:'nowrap',top:0 }}>{fmtMins(openM+t*60)}</div>
-          })}
-        </div>
-      </div>
-
-      {/* Visual bar */}
-      <div style={{ position:'relative',height:30,background:'var(--surface)',borderRadius:6,border:'1px solid var(--border)',overflow:'hidden',marginBottom:16 }}>
-        {customShifts.map((s,i) => {
-          const sM = toM(s.start), rawEM = toM(s.end)
-          const eM = rawEM <= sM ? rawEM + 1440 : rawEM
-          const leftPct = ((Math.max(sM,openM)-openM)/totalM*100).toFixed(2)
-          const widthPct = ((Math.min(eM,closeM)-Math.max(sM,openM))/totalM*100).toFixed(2)
-          if (+widthPct <= 0) return null
-          return (
-            <div key={i} style={{ position:'absolute',left:leftPct+'%',width:`calc(${widthPct}% - 2px)`,height:'100%',background:PALETTE[i%PALETTE.length],borderRadius:4,opacity:.85,display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden' }} title={`${s.start} – ${s.end}`}>
-              <span style={{ fontSize:9,fontWeight:700,color:'white',whiteSpace:'nowrap',padding:'0 3px' }}>{s.start}–{s.end}</span>
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Editable slot list */}
-      <div style={{ background:'var(--surface)',borderRadius:10,border:'1px solid var(--border)',padding:'12px 14px' }}>
-        <div style={{ fontSize:11,fontWeight:700,color:'var(--mutedl)',marginBottom:10,textTransform:'uppercase',letterSpacing:.5 }}>Edit Slots</div>
-        {customShifts.map((s,i) => (
-          <div key={i} className="flex items-center gap-8 mb-8">
-            <div style={{ width:16,height:16,borderRadius:4,background:PALETTE[i%PALETTE.length],flexShrink:0,opacity:.85 }} />
-            <span style={{ fontSize:11,color:'var(--mutedl)',fontWeight:700,flexShrink:0,minWidth:20 }}>#{i+1}</span>
-            <input type="time" value={s.start} onChange={ev => updateShift(i,'start',ev.target.value)}
-              style={{ background:'var(--card)',border:'1px solid var(--border)',borderRadius:7,padding:'5px 10px',fontSize:13,color:'var(--text)',fontFamily:'inherit',cursor:'pointer' }} />
-            <span style={{ color:'var(--muted)',fontSize:13,flexShrink:0 }}>–</span>
-            <input type="time" value={s.end} onChange={ev => updateShift(i,'end',ev.target.value)}
-              style={{ background:'var(--card)',border:'1px solid var(--border)',borderRadius:7,padding:'5px 10px',fontSize:13,color:'var(--text)',fontFamily:'inherit',cursor:'pointer' }} />
-            {customShifts.length > 1 && (
-              <button type="button" onClick={() => removeShift(i)}
-                style={{ background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:16,lineHeight:1,padding:'0 2px',flexShrink:0 }}>✕</button>
-            )}
+        {/* ── Timeline section ── */}
+        <div style={{ background:'var(--surface)', padding:'14px 16px 10px', borderBottom:'1px solid var(--border)' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+            <span style={{ fontSize:11, fontWeight:800, color:'var(--text)', textTransform:'uppercase', letterSpacing:1.5, flex:1 }}>Shift Timeline</span>
+            <span style={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:20, padding:'2px 10px', fontSize:11, fontWeight:700, color:'var(--mutedl)' }}>{open} – {close}</span>
+            <span style={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:20, padding:'2px 10px', fontSize:11, fontWeight:700, color:'var(--mutedl)' }}>{customShifts.length} slot{customShifts.length!==1?'s':''}</span>
           </div>
-        ))}
-        <button type="button" className="btn-ghost-sm" style={{ fontSize:11,padding:'5px 12px',marginTop:4 }} onClick={addShift}>+ Add Slot</button>
+
+          {/* Visual bar */}
+          <div ref={barRef} style={{ position:'relative', height:44, background:'var(--card)', borderRadius:10, border:'1px solid var(--border)', overflow:'hidden', userSelect:'none', marginBottom:6 }}>
+            {customShifts.map((s,i) => {
+              const sM = toM(s.start), rawEM = toM(s.end)
+              const eM = rawEM <= sM ? rawEM + 1440 : rawEM
+              const leftPct = ((Math.max(sM,openM)-openM)/totalM*100).toFixed(2)
+              const widthPct = ((Math.min(eM,closeM)-Math.max(sM,openM))/totalM*100).toFixed(2)
+              if (+widthPct <= 0) return null
+              const col = PALETTE[i%PALETTE.length]
+              return (
+                <div key={i} style={{ position:'absolute', left:leftPct+'%', width:`calc(${widthPct}% - 1px)`, height:'100%', background:col, opacity:.88, display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden' }} title={`${s.start} – ${s.end}`}>
+                  {+widthPct > 8 && <span style={{ fontSize:10, fontWeight:700, color:'white', whiteSpace:'nowrap', padding:'0 4px', textShadow:'0 1px 2px rgba(0,0,0,.2)' }}>{s.start} – {s.end}</span>}
+                </div>
+              )
+            })}
+            {/* Draggable divider handles */}
+            {customShifts.slice(0,-1).map((s,i) => {
+              const sM = toM(s.start), rawEM = toM(s.end)
+              const eM = rawEM <= sM ? rawEM + 1440 : rawEM
+              const boundPct = ((Math.min(eM,closeM)-openM)/totalM*100).toFixed(2)
+              if (+boundPct <= 0 || +boundPct >= 100) return null
+              return (
+                <div key={`d${i}`}
+                  onMouseDown={ev => { ev.preventDefault(); ev.stopPropagation(); startDividerDrag(i, ev.clientX) }}
+                  onTouchStart={ev => { ev.preventDefault(); ev.stopPropagation(); startDividerDrag(i, ev.touches[0].clientX) }}
+                  style={{ position:'absolute', left:`calc(${boundPct}% - 8px)`, top:0, width:16, height:'100%', cursor:'ew-resize', zIndex:10, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <div style={{ width:2, height:'55%', background:'white', borderRadius:2, opacity:.85, pointerEvents:'none', boxShadow:'0 0 4px rgba(0,0,0,.35)' }} />
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Tick labels */}
+          <div style={{ position:'relative', height:14 }}>
+            {Array.from({length:tickCount},(_,t) => {
+              const pct=(t*60/totalM)*100; if(pct>100) return null
+              return <div key={t} style={{ position:'absolute', left:pct+'%', transform:'translateX(-50%)', fontSize:9, color:'var(--muted)', fontWeight:600, whiteSpace:'nowrap' }}>{fmtMins(openM+t*60)}</div>
+            })}
+          </div>
+        </div>
+
+        {/* ── Edit Slots section ── */}
+        <div style={{ padding:'14px 16px 14px' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:12 }}>
+            <div style={{ display:'flex', gap:3 }}>
+              {PALETTE.slice(0, Math.min(customShifts.length, 5)).map((c,pi) => (
+                <div key={pi} style={{ width:5, height:5, borderRadius:'50%', background:c }} />
+              ))}
+            </div>
+            <span style={{ fontSize:10, fontWeight:800, color:'var(--mutedl)', textTransform:'uppercase', letterSpacing:1.5 }}>Edit Slots</span>
+          </div>
+
+          {customShifts.map((s, i) => {
+            let durM = toM(s.end) - toM(s.start)
+            if (durM < 0) durM += 1440
+            const h = Math.floor(durM / 60), min = durM % 60
+            const durLabel = durM <= 0 ? '—' : min === 0 ? h+'h' : h === 0 ? min+'m' : h+'h '+min+'m'
+            const col = PALETTE[i%PALETTE.length]
+            const isLast = i === customShifts.length - 1
+            return (
+              <div key={i} style={{ display:'flex', gap:12, alignItems:'center', marginBottom: isLast ? 0 : 10 }}>
+                {/* Stepper indicator */}
+                <div style={{ display:'flex', flexDirection:'column', alignItems:'center', alignSelf:'stretch', flexShrink:0 }}>
+                  <div style={{ width:28, height:28, borderRadius:'50%', background:col, display:'flex', alignItems:'center', justifyContent:'center', boxShadow:`0 2px 8px ${col}50`, flexShrink:0 }}>
+                    <span style={{ fontSize:11, fontWeight:900, color:'white', lineHeight:1 }}>{i+1}</span>
+                  </div>
+                  {!isLast && (
+                    <div style={{ flex:1, width:2, background:'var(--border)', borderRadius:1, marginBottom:-10 }} />
+                  )}
+                </div>
+
+                {/* Slot card */}
+                <div style={{ flex:1, background:`${col}08`, border:`1.5px solid ${col}28`, borderRadius:12, padding:'9px 13px', display:'flex', alignItems:'center', gap:10 }}>
+                  <input type="time" value={s.start} onChange={ev => updateShift(i,'start',ev.target.value)}
+                    style={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:8, padding:'7px 10px', fontSize:13, fontWeight:700, color:'var(--text)', fontFamily:'inherit', cursor:'pointer', outline:'none', flex:1, minWidth:0 }} />
+
+                  <div style={{ display:'flex', alignItems:'center', flexShrink:0 }}>
+                    <div style={{ width:10, height:1.5, background:`${col}70` }} />
+                    <div style={{ width:0, height:0, borderTop:'3.5px solid transparent', borderBottom:'3.5px solid transparent', borderLeft:`5px solid ${col}90` }} />
+                  </div>
+
+                  <input type="time" value={s.end} onChange={ev => updateShift(i,'end',ev.target.value)}
+                    style={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:8, padding:'7px 10px', fontSize:13, fontWeight:700, color:'var(--text)', fontFamily:'inherit', cursor:'pointer', outline:'none', flex:1, minWidth:0 }} />
+
+                  <div style={{ background:col, borderRadius:20, padding:'4px 12px', flexShrink:0 }}>
+                    <span style={{ fontSize:11, fontWeight:800, color:'white', letterSpacing:.3 }}>{durLabel}</span>
+                  </div>
+
+                  {customShifts.length > 1 && (
+                    <button type="button" onClick={() => removeShift(i)}
+                      style={{ background:'transparent', border:'none', color:'var(--muted)', cursor:'pointer', fontSize:14, padding:'4px 6px', flexShrink:0, borderRadius:6, lineHeight:1, transition:'all .15s' }}
+                      onMouseEnter={ev => { ev.currentTarget.style.color='var(--red)'; ev.currentTarget.style.background='rgba(200,54,74,0.08)' }}
+                      onMouseLeave={ev => { ev.currentTarget.style.color='var(--muted)'; ev.currentTarget.style.background='transparent' }}>✕</button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+
+          {/* Add Slot */}
+          <div style={{ display:'flex', gap:12, alignItems:'center', marginTop:10 }}>
+            <div style={{ width:28, height:28, borderRadius:'50%', border:'2px dashed var(--muted)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, background:'var(--card)' }}>
+              <span style={{ fontSize:14, color:'var(--muted)', lineHeight:1 }}>+</span>
+            </div>
+            <button type="button" onClick={addShift}
+              style={{ flex:1, padding:'9px 14px', background:'transparent', border:'1.5px dashed var(--border)', borderRadius:12, color:'var(--mutedl)', cursor:'pointer', fontSize:12, fontWeight:700, letterSpacing:.4, textAlign:'left', transition:'all .18s' }}
+              onMouseEnter={ev => { ev.currentTarget.style.background='var(--surface)'; ev.currentTarget.style.borderColor='var(--mutedl)' }}
+              onMouseLeave={ev => { ev.currentTarget.style.background='transparent'; ev.currentTarget.style.borderColor='var(--border)' }}>
+              Add another slot
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )

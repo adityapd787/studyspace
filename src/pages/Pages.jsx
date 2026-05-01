@@ -110,7 +110,17 @@ export function Browse() {
                   {(lib.amenities || []).length > 3 && <span className="chip">+{lib.amenities.length - 3}</span>}
                 </div>
                 <div className="lib-foot">
-                  <div><span className="lib-price">₹{lib.price_per_hour}</span><span className="text-sm c-muted">/shift</span></div>
+                  <div style={{ display:'flex', alignItems:'baseline', gap:4, flexWrap:'wrap' }}>
+                    {lib.discount_shift && lib.discount_shift < lib.price_per_hour ? (
+                      <>
+                        <span style={{ textDecoration:'line-through', fontSize:11, color:'var(--muted)' }}>₹{lib.price_per_hour}</span>
+                        <span className="lib-price">₹{lib.discount_shift}</span>
+                      </>
+                    ) : (
+                      <span className="lib-price">₹{lib.price_per_hour}</span>
+                    )}
+                    <span className="text-sm c-muted">/shift</span>
+                  </div>
                   <span className="text-sm c-green">{lib.total_seats} seats</span>
                 </div>
               </div>
@@ -128,7 +138,9 @@ export function LibraryDetail() {
   const photos = (lib.photos || []).filter(p => p?.trim())
   const plans = SUB_PLANS.filter(p => p.id === 'hourly' ? lib.price_per_hour > 0 : (lib[p.field] || 0) > 0)
   const planObj = SUB_PLANS.find(p => p.id === S.selectedPlan) || SUB_PLANS[0]
-  const planPrice = S.selectedPlan === 'hourly' ? lib.price_per_hour : (lib[planObj.field] || 0)
+  const planOrigPrice = S.selectedPlan === 'hourly' ? lib.price_per_hour : (lib[planObj.field] || 0)
+  const planDiscField = S.selectedPlan === 'hourly' ? 'discount_shift' : planObj.field.replace('price_', 'discount_')
+  const planPrice = (lib[planDiscField] && lib[planDiscField] < planOrigPrice) ? lib[planDiscField] : planOrigPrice
   const reviews = DEMO_REVIEWS[lib.id] || S.libReviews || []
 
   return (
@@ -147,7 +159,17 @@ export function LibraryDetail() {
             </div>
           </div>
           <div className="text-right flex-shrink-0">
-            <span className="price-big">₹{lib.price_per_hour}<span className="text-xl c-muted" style={{ fontFamily: '"DM Sans",sans-serif' }}>/shift</span></span>
+            {lib.discount_shift && lib.discount_shift < lib.price_per_hour ? (
+              <>
+                <div style={{ display:'flex', alignItems:'center', gap:8, justifyContent:'flex-end', marginBottom:3 }}>
+                  <span style={{ textDecoration:'line-through', fontSize:16, color:'var(--muted)' }}>₹{lib.price_per_hour}</span>
+                  <span style={{ background:'var(--green)', color:'white', fontSize:10, fontWeight:800, padding:'2px 8px', borderRadius:12, letterSpacing:.3 }}>{Math.round((1 - lib.discount_shift/lib.price_per_hour)*100)}% OFF</span>
+                </div>
+                <span className="price-big">₹{lib.discount_shift}<span className="text-xl c-muted" style={{ fontFamily: '"DM Sans",sans-serif' }}>/shift</span></span>
+              </>
+            ) : (
+              <span className="price-big">₹{lib.price_per_hour}<span className="text-xl c-muted" style={{ fontFamily: '"DM Sans",sans-serif' }}>/shift</span></span>
+            )}
             <p className="c-green text-md mt-8">{lib.total_seats} total seats</p>
           </div>
         </div>
@@ -168,12 +190,21 @@ export function LibraryDetail() {
         <p className="c-muted text-sm mb-18">Pick how you'd like to access this library.</p>
         <div className="plan-grid">
           {plans.map(p => {
-            const price = p.id === 'hourly' ? lib.price_per_hour : (lib[p.field] || 0)
+            const origPrice = p.id === 'hourly' ? lib.price_per_hour : (lib[p.field] || 0)
+            const dField = p.id === 'hourly' ? 'discount_shift' : p.field.replace('price_', 'discount_')
+            const discPrice = lib[dField]
+            const hasDisc = discPrice && discPrice < origPrice
+            const pctOff = hasDisc ? Math.round((1 - discPrice/origPrice)*100) : 0
             return (
               <div key={p.id} className={`plan-card ${S.selectedPlan === p.id ? 'on' : ''}`} onClick={() => set({ selectedPlan: p.id })}>
-                {p.saveLabel && <span className="plan-save">{p.saveLabel}</span>}
+                {hasDisc ? (
+                  <span className="plan-save" style={{ background:'var(--green)' }}>{pctOff}% OFF</span>
+                ) : (
+                  p.saveLabel && <span className="plan-save">{p.saveLabel}</span>
+                )}
                 <div className="plan-label">{p.label}</div>
-                <div className="plan-price">₹{price.toLocaleString('en-IN')}</div>
+                {hasDisc && <div style={{ fontSize:12, color:'var(--muted)', textDecoration:'line-through', lineHeight:1.3, marginBottom:1 }}>₹{origPrice.toLocaleString('en-IN')}</div>}
+                <div className="plan-price">₹{(hasDisc ? discPrice : origPrice).toLocaleString('en-IN')}</div>
                 <div className="plan-per">{p.perLabel}</div>
               </div>
             )
@@ -233,7 +264,8 @@ export function Seats() {
   const { S, set, go, fetchSeats } = useApp()
   const lib = S.selectedLib
   const can = S.selectedSeats.length > 0 && S.selectedSlot
-  const total = S.selectedSeats.length * (lib?.price_per_hour || 0) * 3
+  const effShiftPrice = lib?.discount_shift && lib.discount_shift < lib?.price_per_hour ? lib.discount_shift : (lib?.price_per_hour || 0)
+  const total = S.selectedSeats.length * effShiftPrice * 3
   const shifts = lib ? computeShifts(lib) : []
   const toggleSeat = seat => set({ selectedSeats: S.selectedSeats.find(s => s.id === seat.id) ? S.selectedSeats.filter(s => s.id !== seat.id) : [...S.selectedSeats, seat] })
   const [activeSeatFloor, setActiveSeatFloor] = useState(0)
@@ -360,7 +392,10 @@ export function Booking() {
   const lib = S.selectedLib
   const isSubscription = S.selectedPlan !== 'hourly'
   const planObj = SUB_PLANS.find(p => p.id === S.selectedPlan) || SUB_PLANS[0]
-  const planPrice = isSubscription ? (lib[planObj.field] || 0) : S.selectedSeats.length * (lib?.price_per_hour || 0) * 3
+  const planRawPrice = isSubscription ? (lib[planObj.field] || 0) : (lib?.price_per_hour || 0)
+  const planDiscFieldBk = isSubscription ? planObj.field.replace('price_', 'discount_') : 'discount_shift'
+  const planEffPrice = (lib[planDiscFieldBk] && lib[planDiscFieldBk] < planRawPrice) ? lib[planDiscFieldBk] : planRawPrice
+  const planPrice = isSubscription ? planEffPrice : S.selectedSeats.length * planEffPrice * 3
   const durMonths = PLAN_DUR_MONTHS[S.selectedPlan]
   const endDate = () => { const d = new Date(); d.setMonth(d.getMonth() + (durMonths || 0)); return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) }
   const [busy, setBusy] = useState(false)

@@ -218,6 +218,11 @@ alter table libraries add column if not exists shift_durations integer[] default
 alter table libraries add column if not exists floors_config   jsonb;
 alter table libraries add column if not exists custom_shifts   jsonb;
 alter table libraries add column if not exists seat_grid       jsonb;
+alter table libraries add column if not exists discount_shift    integer;
+alter table libraries add column if not exists discount_monthly  integer;
+alter table libraries add column if not exists discount_3monthly integer;
+alter table libraries add column if not exists discount_6monthly integer;
+alter table libraries add column if not exists discount_annual   integer;
 alter table seats     add column if not exists grid_r          integer;
 alter table seats     add column if not exists grid_c          integer;
 alter table seats     add column if not exists floor           text;
@@ -270,6 +275,12 @@ create or replace trigger on_auth_user_created
 | 2026-04-30 | `buildDefaultShifts(open, close, durations)` — auto-divides day, appends remainder as final slot |
 | 2026-04-30 | `computeShifts()` checks `lib.custom_shifts` first (priority over duration-based logic) |
 | 2026-04-30 | `custom_shifts jsonb` column added to libraries schema; saved in `saveLibrary()` payload |
+| 2026-05-01 | Shift duration selection locked to single-select (`toggleShift` always sets `[h]`) |
+| 2026-05-01 | Draggable dividers on timeline bar — 15-min snap, per-slot min/max clamping, touch support |
+| 2026-05-01 | `ShiftTimelineEditor` redesigned — unified white card: `--surface` timeline header + vertical stepper slot editor |
+| 2026-05-01 | Discount pricing — 5 fields (`discount_shift/monthly/3monthly/6monthly/annual`) in EditLibrary + DB schema |
+| 2026-05-01 | Student-side discount display — struck-through original price, green `X% OFF` badge, discounted price on browse/library/plan cards/booking |
+| 2026-05-01 | Google Maps direct link in EditLibrary — pre-searches library location/name in new tab |
 
 ---
 
@@ -288,3 +299,6 @@ create or replace trigger on_auth_user_created
 - [x] ErrorBoundary — no blank pages on crash
 - [x] Aqua/cyan theme — softened, yellow fixed, borders fixed
 - [x] Shift slot editor — remainder as final slot, per-slot time pickers, add/remove, saves as `custom_shifts`
+- [x] Shift timeline — single-select duration, draggable dividers, unified stepper card design
+- [x] Discount pricing — per-plan sale price with live % OFF badge, reflected on student browse/library/booking screens
+- [x] Google Maps quick-link in EditLibrary form
