@@ -62,6 +62,7 @@ export function AppProvider({ children }) {
     } else {
       set({ user:{id:'demo-user-1'}, profile:{...DEMO_PROFILE}, userMode:'student',
             myBookings:[...DEMO_BOOKINGS], mySubscriptions:[...DEMO_SUBSCRIPTIONS], authModal:false })
+      if (DEMO_BOOKINGS.length) fetchAnnouncements(DEMO_BOOKINGS[0]?.library_id)
     }
   }
 

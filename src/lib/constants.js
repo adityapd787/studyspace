@@ -61,6 +61,18 @@ export function fmtMins(m) {
 }
 
 export function computeShifts(lib) {
+  if (Array.isArray(lib.custom_shifts) && lib.custom_shifts.length) {
+    return lib.custom_shifts.map(s => {
+      const [sh, sm] = s.start.split(':').map(Number)
+      const [eh, em] = s.end.split(':').map(Number)
+      let startM = sh*60+(sm||0), endM = eh*60+(em||0)
+      if (endM <= startM) endM += 24*60
+      const durM = endM - startM
+      const durH = durM / 60
+      const label = Number.isInteger(durH) ? durH+'h' : Math.round(durM)+'min'
+      return { slot: s.start + ' – ' + s.end, dur: label }
+    })
+  }
   const open = lib.hours_open || '06:00'
   const close = lib.hours_close || '22:00'
   const durs = Array.isArray(lib.shift_durations)

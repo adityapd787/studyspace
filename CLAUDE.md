@@ -1,121 +1,222 @@
-# StudySpace — AI Project Map
-> Read this file first every session. It replaces reading all source files.
-> Last updated: reflects all changes through hero white background session.
-> Mandatory acknowledgement rule: when Claude (or any assistant) is asked to read this file, it must explicitly acknowledge the `Codex Fix Log (Timestamped)` section and confirm each timestamped entry is understood before suggesting new edits.
+# StudySpace — AI Context File
+> **READ THIS ENTIRE FILE BEFORE TOUCHING ANY CODE.**
+> This project has been developed collaboratively across Claude (chat) and Codex.
+> Every convention, pattern, and decision is documented here.
 
-## Stack
-Vite + React 18, Supabase (Postgres + Auth + Storage), deployed on Vercel.
-Demo mode auto-activates when `CFG.url === 'YOUR_SUPABASE_URL'` in `src/lib/supabase.js`.
+---
+
+## Project overview
+Study space booking platform for India (Lucknow-focused). Students discover libraries, book seats by shift, subscribe monthly/quarterly. Library owners manage listings, seat layouts, pricing, and announcements.
+
+**Live site:** https://studyspace-ecru.vercel.app
+**Repo:** https://github.com/adityapd787/studyspace
+**Stack:** Vite + React 18 · Supabase (Postgres + Auth + Storage) · deployed on Vercel
+
+Demo mode activates automatically when `CFG.url === 'YOUR_SUPABASE_URL'` in `src/lib/supabase.js`.
+
+---
+
+## Working relationship & conventions
+
+This project has been built over many sessions. The owner (Aditya) works with Claude for all major features and Codex only for review and understanding code. Do not introduce patterns that conflict with what's documented here — Claude has intentionally designed specific approaches for good reasons.
+
+**Communication style with Aditya:**
+- Be direct, minimal explanation unless asked
+- Deliver working code, not theories
+- When something breaks, diagnose from the actual file — never guess
+- Always update CLAUDE.md after significant changes
+
+---
 
 ## File map
-| File | Purpose | Edit when... |
-|---|---|---|
-| `src/App.jsx` | Router + boot (calls `fetchLibraries` + `initAuth`) | Adding a new screen |
-| `src/lib/supabase.js` | Supabase client (`sb`) + `DEMO_MODE` flag | Connecting real DB |
-| `src/lib/constants.js` | Demo data, LAYOUT_PRESETS, SUB_PLANS, computeShifts() | Changing demo data or shift logic |
-| `src/lib/AppContext.jsx` | ALL state (S), set(), go(), every data fetch/mutation, initAuth | Adding state or API calls |
-| `src/lib/ui-config.js` | Config arrays for repetitive UI (stats, tabs, labels) | Changing dashboard stats, tabs |
-| `src/components/shared.jsx` | Nav, AuthModal (real Supabase auth), ReviewModal, SeatLayout, AmenityInput, toast() | Shared UI, auth flow |
-| `src/pages/Pages.jsx` | Landing, Browse, LibraryDetail, Seats, Booking, StudentDash, Profile | Student-facing screens |
-| `src/pages/OwnerPages.jsx` | OwnerDash, EditLibrary, SeatEditor, ShiftTimeline, AnnouncementsPanel | Owner-facing screens |
-| `src/styles/global.css` | Theme vars + all component CSS. Hero section has background:white | Theme/brand changes |
-| `src/styles/utils.css` | Layout utility classes (flex, grid, spacing, text, photo-row) | Adding new utilities |
+| File | Role |
+|---|---|
+| `src/App.jsx` | Router + boot (`fetchLibraries` + `initAuth`) + ErrorBoundary |
+| `src/lib/supabase.js` | `sb` client + `DEMO_MODE` flag |
+| `src/lib/constants.js` | Demo data · `LAYOUT_PRESETS` · `SUB_PLANS` · `computeShifts()` · `buildDefaultShifts()` |
+| `src/lib/AppContext.jsx` | All state `S` · `set()` · `go()` · every data/mutation function |
+| `src/lib/ui-config.js` | Config arrays for stats, tabs, labels |
+| `src/components/shared.jsx` | `Nav` · `AuthModal` · `ReviewModal` · `SeatLayout` · `AmenityInput` · `toast()` |
+| `src/pages/Pages.jsx` | Student screens: Landing Browse Library Seats Booking StudentDash Profile |
+| `src/pages/OwnerPages.jsx` | Owner screens: OwnerDash EditLibrary SeatEditor ShiftTimelineEditor AnnouncementsPanel FloorPlanCanvas |
+| `src/styles/global.css` | Theme variables + all component CSS |
+| `src/styles/utils.css` | Utility classes (flex, grid, spacing, typography) |
 
-## State shape (S)
+---
+
+## ⚠️ CRITICAL — Never violate these
+
+### 1. saveLibrary() returns an object
 ```js
-// Auth
-user, profile, userMode         // profile.role = 'student' | 'owner'
-authModal, authMode, authRole
+// ALWAYS
+const res = await saveLibrary(data)
+if (res?.ok) { /* success */ }
+else toast(res?.error || 'Save failed', 'error')
 
-// Student flows
-libraries[], selectedLib, libReviews[]
-seats[], selectedSeats[], selectedSlot, selectedPlan
-selectedDate                    // 'YYYY-MM-DD', defaults to today, up to 30 days ahead
-myBookings[], mySubscriptions[]
-
-// Owner flows
-ownerLibrary, ownerBookings[], ownerSeats[], ownerTab
-
-// Seat editor
-gridFloors[], activeFloor, activeRoom, gridTool, seatNaming, editorPreset, gridDrag
-
-// Edit library form (temp state, populated before navigating to edit-library)
-addLibAmenities[], addLibPhotos[], addLibOpen, addLibClose, addLibShift[]
-
-// UI
-loading, lightboxUrl
-reviewModal, reviewRating, reviewText
-announcements[]                 // [{id, library_id, lib_name, message, created_at}]
+// NEVER — this is the old pattern, do not use
+const ok = await saveLibrary(data)
 ```
 
-## Navigation
+### 2. Forms use controlled inputs only
+```js
+// ALWAYS
+const [name, setName] = useState('')
+<input value={name} onChange={ev => setName(ev.target.value)} />
+
+// NEVER
+<input defaultValue={...} />
+// NEVER use FormData, querySelector, getElementById to read form values
+```
+
+### 3. CSS variables — never hardcode colours
+```css
+✅  color: var(--red)
+❌  color: #C8364A
+```
+
+### 4. Inline styles only for dynamic JS values
+```jsx
+✅  style={{ color: lib.tag_color }}     // JS value — must be inline
+❌  style={{ fontSize: 14 }}             // use class text-md instead
+```
+
+### 5. Navigation
+```js
+go('screen-name')   // ALWAYS — scrolls to top
+// NEVER use window.location directly
+```
+
+---
+
+## Current theme (aqua/cyan — softened)
+```css
+--bg: #DFF6FB          /* soft aqua page background */
+--surface: #C2E9F4     /* inputs, cards, canvas areas */
+--card: #FFFFFF
+--red: #C8364A         /* primary brand — buttons, accents */
+--text: #0D2B35
+--mutedl: #1E5C70      /* labels, hints */
+--muted: #6BAFC0       /* placeholders */
+--green: #1AA882
+--yellow: #D4860A      /* amber — star ratings, warnings. NEVER make this teal */
+--blue: #2A72B5
+--purple: #7B3FA0
+--border: rgba(14,90,115,0.18)
+--shadow: rgba(10,70,100,0.12)
+```
+**Hero section ONLY** has `background: white` + `::after` fade. Every other page uses `var(--bg)`.
+
+---
+
+## Navigation screens
 ```
 landing | browse | library | seats | booking
 student-dash | owner-dash | add-library | edit-library | seat-editor | profile
 ```
-Navigate: `go('screen-name')` — always scrolls to top.
 
-## Key functions in AppContext
+---
+
+## State shape (S)
 ```js
-initAuth()                // boot — restores session, sets user+profile+role
-fetchLibraries()          // applies S.searchQ + S.filterTag
-fetchSeats(libId)         // uses S.selectedDate + S.selectedSlot for live availability
-fetchLibReviews(libId)
-fetchOwnerData()          // loads ownerLibrary + ownerBookings + ownerSeats
-createBooking()           // uses selectedSeats, selectedSlot, selectedDate, payMethod
-createSubscription(plan)  // plan = 'monthly'|'quarterly'|'halfyear'|'annual'
-cancelBooking(id)
-submitReview()            // uses reviewRating, reviewText, reviewModal
-saveLibrary(data)         // insert or update based on S.ownerLibrary existence
-sendAnnouncement(msg)     // writes to announcements table, updates S.announcements
-fetchAnnouncements(libId)
+// Auth
+user, profile, userMode          // profile.role = 'student' | 'owner'
+authModal, authMode, authRole
+
+// Student
+libraries[], selectedLib, libReviews[]
+seats[], selectedSeats[], selectedSlot, selectedPlan
+selectedDate                     // 'YYYY-MM-DD', today → +30 days
+myBookings[], mySubscriptions[]
+announcements[]                  // from owner sendAnnouncement
+
+// Owner
+ownerLibrary, ownerBookings[], ownerSeats[], ownerTab
+
+// Seat editor
+gridFloors[], activeFloor, activeRoom
+gridTool ('add'|'move'|'erase'), seatNaming, editorPreset, gridDrag
+
+// Edit library form (temp — reset after saving)
+addLibAmenities[], addLibPhotos[], addLibOpen, addLibClose, addLibShift[]
+
+// UI
+loading, lightboxUrl, reviewModal, reviewRating, reviewText
 ```
 
-## Auth flow (real Supabase)
-- AuthModal uses fully controlled inputs (useState) — no querySelector, no FormData
-- Sign in: sb.auth.signInWithPassword() → load profiles row → set role → route to dashboard
-- Sign up: sb.auth.signUp() → upsert profiles row → auto-login or email confirm
-- Forgot: sb.auth.resetPasswordForEmail() → redirectTo window.location.origin
-- initAuth() on boot: getSession() → restore user silently
-- onAuthStateChange handles token refresh + cross-tab sign-out
+---
 
-## SeatEditor — full feature list
-- **Seat Naming Format**: 3 modes — alpha-num (A1,B2), col-alpha (A1,B1), sequential (1,2,3)
-- **Floor Plan canvas**: draggable/resizable room boxes, inline rename, add/remove floors & rooms
-- **Long-press drag**: hold seat ~500ms → `longTimer` ref fires → `activeDrag.current=true` → drag to empty cell → `dropSeat()` places it
-- **Scroll separation**: `touchAction:'none'` only when `activeDrag.current===true`; otherwise `pan-y` so normal scroll works
-- **FloorPlanCanvas**: separate component, `dragState` ref for move/resize, SVG dot grid bg, touch support
-- **seatNaming** state in AppContext drives autoLabel across all 3 modes
-- **Save persistence**: `saveLibrary()` updates `S.gridFloors` from `floors_config`; `fetchOwnerData()` restores `gridFloors` on load; SeatEditor `useEffect` loads from `lib.floors_config` if exists
-- **OwnerDash button**: only resets `gridFloors` if none saved — preserves layout between visits
+## AppContext — all functions
+```js
+initAuth()                // boot — restores session via getSession()
+fetchLibraries()          // applies searchQ + filterTag
+fetchSeats(libId)         // uses selectedDate + selectedSlot for live availability
+fetchLibReviews(libId)
+fetchOwnerData()          // loads ownerLibrary → restores gridFloors via cloneFloorsConfig()
+createBooking()           // uses selectedSeats, selectedSlot, selectedDate, payMethod
+createSubscription(plan)  // 'monthly'|'quarterly'|'halfyear'|'annual'
+cancelBooking(id)
+submitReview()
+saveLibrary(data)         // → { ok, error } — see CRITICAL above
+sendAnnouncement(msg)
+fetchAnnouncements(libId) // called after login for students
+cloneFloorsConfig(fc)     // safe deep-clone helper — returns null if input invalid
+```
 
-## Seat booking flow
-1. Student picks date (today to +30 days) → resets slot + seats
-2. Student picks shift → fetchSeats() uses selectedDate for live availability  
-3. Student picks seat(s) — multi-floor/room tabs if lib.floors_config exists
-4. selectedDate stored in booking (not hardcoded to today)
+---
 
-## EditLibrary form
-- Fully controlled inputs — all fields use useState, NO defaultValue, NO FormData
-- State vars: name, tag, location, desc, mapsUrl, priceHr, priceM, price3, price6, priceA, openT, closeT, shifts[], amenities[], photos[], busy
-- Validation: manual per-field with specific toast() messages
+## Key component behaviours
 
-## Photo uploads (EditLibrary)
-- 3 options: file picker (📁) | camera (📷, capture="environment") | URL paste
-- Demo: URL.createObjectURL() — temporary
-- Production: Supabase Storage bucket named library-photos (must be public)
+### EditLibrary
+- All fields are controlled `useState` — initialised from `ownerLibrary` on mount
+- Opens at last saved state automatically
+- Save: `const res = await saveLibrary(data)` → check `res?.ok`
+- Photos: 📁 file picker · 📷 camera (`capture="environment"`) · URL paste
+- Production photos → Supabase Storage bucket `library-photos` (public)
+- **Shift slots**: `customShifts` state — array of `{start:'HH:MM', end:'HH:MM'}`. Initialized from `lib.custom_shifts` if saved, otherwise built via `buildDefaultShifts(open, close, durations)`. Duration buttons are templates only — selecting one rebuilds `customShifts` (remainder becomes a final slot). Changing open/close also rebuilds. Saved as `custom_shifts` in DB.
+- **`ShiftTimelineEditor`**: interactive — visual bar of all slots + editable time inputs per slot + add/remove slot. Replaces the old read-only `ShiftTimeline`.
+- **`computeShifts(lib)`**: checks `lib.custom_shifts` first (priority); falls through to duration-based logic only if absent.
 
-## CSS conventions
-- Hero ONLY has background:white + ::after fade to var(--bg) — all other pages use var(--bg) cream
-- Use classNames from utils.css, not inline style={{}} for layout
-- Theme vars: --red, --green, --blue, --yellow, --purple, --bg, --surface, --card, --border, --mutedl, --muted
+### SeatEditor
+- **Naming modes**: `alpha-num` (A1,B2) · `col-alpha` (A1,B1) · `sequential` (1,2,3)
+- **Drag**: immediate press-drag in Move mode only (`gridTool === 'move'`)
+- **Scroll separation**: `touchAction: 'pan-x pan-y'` normally → `'none'` + body scroll lock during drag
+- **`cloneFloorsConfig()`**: used everywhere floors_config is restored — never spread directly
+- **Persistence**: save → `floors_config` in DB → `fetchOwnerData()` restores `gridFloors`
 
-## Schema additions needed
+### AuthModal (shared.jsx)
+- Fully controlled inputs — `email`, `password`, `fullName` all useState
+- Real auth: `signInWithPassword` / `signUp` / `resetPasswordForEmail`
+- After student login → `fetchAnnouncements()` called automatically
+
+### Seat booking flow
+1. Pick date (today → +30 days) → resets slot + seats
+2. Pick shift → `fetchSeats()` uses selectedDate
+3. Pick seat — multi-floor/room tabs if `lib.floors_config` exists
+
+---
+
+## Component patterns — use these, don't create new ones
+```
+.card p-{16|22|24|26|28|32}   content cards
+.btn-red       primary action
+.btn-outline   secondary
+.btn-ghost-sm  utility (white bg on cyan surface)
+.btn-danger    destructive
+.form-input    all text inputs and selects
+.spill + .pill-{green|red|blue|yellow|muted}   status badges
+toast('msg')            success
+toast('msg', 'error')   error
+```
+
+---
+
+## Supabase schema additions needed
 ```sql
 alter table libraries add column if not exists hours_open      time;
 alter table libraries add column if not exists hours_close     time;
 alter table libraries add column if not exists shift_durations integer[] default '{3}';
 alter table libraries add column if not exists floors_config   jsonb;
+alter table libraries add column if not exists custom_shifts   jsonb;
 alter table libraries add column if not exists seat_grid       jsonb;
 alter table seats     add column if not exists grid_r          integer;
 alter table seats     add column if not exists grid_c          integer;
@@ -125,20 +226,17 @@ alter table seats     add column if not exists room            text;
 create table if not exists public.announcements (
   id uuid default gen_random_uuid() primary key,
   library_id uuid references libraries(id) on delete cascade,
-  message text not null,
-  created_at timestamptz default now()
+  message text not null, created_at timestamptz default now()
 );
 alter table announcements enable row level security;
 create policy "owners insert" on announcements for insert to authenticated
   with check (library_id in (select id from libraries where owner_id = auth.uid()));
 create policy "all read" on announcements for select to authenticated using (true);
 
--- Storage RLS (library-photos bucket)
+-- Storage
 create policy "auth upload" on storage.objects for insert to authenticated
   with check (bucket_id = 'library-photos');
 create policy "public read" on storage.objects for select to public
-  using (bucket_id = 'library-photos');
-create policy "auth delete" on storage.objects for delete to authenticated
   using (bucket_id = 'library-photos');
 
 -- Auto-create profile on signup
@@ -154,90 +252,39 @@ create or replace trigger on_auth_user_created
   after insert on auth.users for each row execute procedure public.handle_new_user();
 ```
 
+---
+
+## What Codex changed (for reference)
+| Date | Change |
+|---|---|
+| 2026-04-27 12:09 | SeatEditor crash fix — `cloneFloorsConfig()`, `activeDrag` ref, drag helpers |
+| 2026-04-27 12:39–13:02 | Mobile drag/scroll separation — `pan-x pan-y`, body scroll lock |
+| 2026-04-27 21:00–21:07 | `saveLibrary()` → `{ok, error}`, payload normalisation, schema-mismatch detection |
+| 2026-04-28 | Aqua/cyan theme applied — `--yellow` fixed back to amber, cyan-tinted borders/overlay, btn-ghost-sm white bg |
+| 2026-04-28 | `demoLogin('student')` calls `fetchAnnouncements()` · `AuthModal` destructures `fetchAnnouncements` · photo preview operator-precedence fix |
+
+## What Claude Code changed (for reference)
+| Date | Change |
+|---|---|
+| 2026-04-30 | `ShiftTimeline` → interactive `ShiftTimelineEditor` — editable time inputs per slot, add/remove slots, visual bar |
+| 2026-04-30 | `buildDefaultShifts(open, close, durations)` — auto-divides day, appends remainder as final slot |
+| 2026-04-30 | `computeShifts()` checks `lib.custom_shifts` first (priority over duration-based logic) |
+| 2026-04-30 | `custom_shifts jsonb` column added to libraries schema; saved in `saveLibrary()` payload |
+
+---
+
 ## Pending features
 - [ ] Razorpay payment integration
 - [ ] PWA / service worker
-- [x] Date picker for bookings
-- [x] Seat editor save/load persistence (floors_config round-trips correctly)
-- [x] Long-press drag for seats (no Move tool required)
-- [x] Mobile scroll/drag separation (touchAction switches dynamically)
-- [x] Multi-floor seat display
-- [x] Owner announcements tab
+- [x] Date picker (today → +30 days)
+- [x] Multi-floor seat display on booking screen
+- [x] Owner announcements tab + student display
 - [x] Real Supabase auth (sign in / sign up / forgot / session restore)
-- [x] Photo upload from device + camera
+- [x] Photo upload — device + camera + URL
 - [x] Hero white background (Landing only)
-- [x] EditLibrary save bug fixed
-- [x] Storage RLS policies
-
-## Codex Fix Log (Timestamped)
-- 2026-04-27 12:07:18 +05:30 (IST): Investigation confirmed `SeatEditor` crash root cause as `ReferenceError: activeDrag is not defined` with missing long-press helper functions (`startPress`, `cancelPress`).
-- 2026-04-27 12:09:57 +05:30 (IST): Implemented targeted runtime stability fixes:
-  - `src/pages/OwnerPages.jsx`:
-    - Added `cloneFloorsConfig()` guard/clone helper for safe `floors_config` restoration.
-    - Updated Owner Dashboard `Seat Editor` navigation restore path to use guarded `cloneFloorsConfig()`.
-    - In `SeatEditor`, added missing refs: `activeDrag`, `longTimer`.
-    - Added missing long-press helpers: `startPress()` and `cancelPress()`.
-    - Updated `SeatEditor` init restore path to use guarded `cloneFloorsConfig()`.
-  - `src/lib/AppContext.jsx`:
-    - Added `cloneFloorsConfig()` helper.
-    - Updated `fetchOwnerData()` to restore grid floors via guarded helper.
-    - Updated `saveLibrary()` (demo branch) to restore grid floors via guarded helper.
-  - Validation:
-    - Ran `npm run build` successfully at 2026-04-27 12:09:57 +05:30 (IST).
-- 2026-04-27 12:39:06 +05:30 (IST): Refined SeatEditor mobile/trackpad scrolling without changing other behavior:
-  - `src/pages/OwnerPages.jsx`:
-    - Updated seat-canvas `touchAction` fallback from `pan-y` to `pan-x pan-y` when not dragging.
-    - Preserved drag rule: while actively dragging, `touchAction` remains `none`.
-    - Result: left/right/up/down scrolling is available again, and long-press drag still works only in `Move` mode.
-  - Validation:
-    - Ran `npm run build` successfully after this change.
-- 2026-04-27 12:47:03 +05:30 (IST): Updated SeatEditor drag trigger behavior exactly for Move mode:
-  - `src/pages/OwnerPages.jsx`:
-    - Removed long-press delay requirement for seat dragging in `Move` mode.
-    - Drag now starts immediately on press/click (`onMouseDown`/`onTouchStart`) when the target cell contains a seat.
-    - Kept scroll locking only during active drag selection (`activeDrag.current === true`), and normal scrolling otherwise.
-    - Removed obsolete timer-based press logic (`longTimer`, `startPress`, `cancelPress`) to avoid side-effects.
-    - Updated in-editor help copy to reflect immediate press+drag behavior.
-  - Validation:
-    - Build verified successfully after changes.
-- 2026-04-27 12:55:46 +05:30 (IST): Fixed mobile drag stability for SeatEditor without altering baseline behavior:
-  - `src/pages/OwnerPages.jsx`:
-    - While a seat is actively selected for drag (`activeDrag.current === true`), canvas overflow is now temporarily locked (`overflow: hidden`).
-    - On drop/cancel, canvas overflow automatically returns to normal (`overflow: auto`), restoring regular left/right/up/down scrolling.
-    - This prevents the seat-arrangement panel from scrolling along with finger movement during drag on mobile.
-  - Validation:
-    - Ran `npm run build` successfully after this adjustment.
-- 2026-04-27 13:02:38 +05:30 (IST): Fixed remaining vertical scroll bleed during active seat drag on mobile:
-  - `src/pages/OwnerPages.jsx`:
-    - Added drag-state effect tied to `S.gridDrag` that temporarily locks page-level scrolling (`body` + `html`) only while a seat is actively selected/dragging.
-    - Applied temporary global drag lock styles during active drag:
-      - `overflow: hidden`
-      - `touch-action: none` (body)
-      - `overscroll-behavior: none`
-    - Automatically restores all styles immediately on drop/cancel/unmount.
-    - Existing behavior preserved:
-      - No lock when not dragging (normal left/right/up/down scrolling stays available).
-      - Canvas-local lock while dragging remains in place.
-  - Validation:
-    - Ran `npm run build` successfully after this adjustment.
-- 2026-04-27 21:00:57 +05:30 (IST): Improved EditLibrary save reliability and error visibility:
-  - `src/lib/AppContext.jsx`:
-    - Updated `saveLibrary()` to normalize shift duration values before DB write.
-    - Added compatibility retry path for legacy schemas (retries save after removing newer columns if DB reports unknown-column/schema-cache errors).
-    - Changed return shape to `{ ok, error }` so callers can show the actual failure reason.
-  - `src/pages/OwnerPages.jsx`:
-    - Updated `EditLibrary` save submit path to use `res.ok` and display detailed failure message from `res.error`.
-    - Updated `SeatEditor` save path to the same `{ ok, error }` response handling.
-  - Validation:
-    - Ran `npm run build` successfully after changes.
-- 2026-04-27 21:07:55 +05:30 (IST): Switched EditLibrary save behavior to strict production-grade schema enforcement:
-  - `src/lib/AppContext.jsx`:
-    - Removed legacy schema-downgrade retry logic from `saveLibrary()` (no silent field dropping).
-    - Added explicit schema-mismatch error shaping for missing-column/schema-cache failures.
-    - Save now fails loudly with actionable migration-required error instead of pretending success.
-  - Validation:
-    - Ran `npm run build` successfully after this change.
-
-### Claude acknowledgement required on next read
-- On the next request to read this file, Claude must include this exact line first:
-`Acknowledged Codex Fix Log entries dated 2026-04-27 12:07:18 +05:30 and 2026-04-27 12:09:57 +05:30.`
+- [x] EditLibrary — controlled inputs, opens at last saved state
+- [x] saveLibrary {ok,error} with schema-mismatch detection
+- [x] Seat editor — floors, rooms, naming, drag, scroll separation, persistence
+- [x] ErrorBoundary — no blank pages on crash
+- [x] Aqua/cyan theme — softened, yellow fixed, borders fixed
+- [x] Shift slot editor — remainder as final slot, per-slot time pickers, add/remove, saves as `custom_shifts`

@@ -51,7 +51,7 @@ export function Nav() {
 
 // ── Auth Modal ─────────────────────────────────────────────────
 export function AuthModal() {
-  const { S, set, demoLogin, fetchOwnerData } = useApp()
+  const { S, set, demoLogin, fetchOwnerData, fetchAnnouncements } = useApp()
   const { authMode: mode, authRole: role } = S
   const isForgot = mode === 'forgot', isLogin = mode === 'login'
 

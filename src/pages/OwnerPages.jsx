@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useApp } from '../lib/AppContext'
 import { DEMO_MODE, sb } from '../lib/supabase'
-import { LAYOUT_PRESETS, AMENITY_PRESETS } from '../lib/constants'
+import { LAYOUT_PRESETS, AMENITY_PRESETS, fmtMins } from '../lib/constants'
 import { e, fmtDate, initials, toast, AmenityInput } from '../components/shared'
 import { ownerStats, OWNER_TABS, SHIFT_OPTS, TAG_COLORS, OWNER_SEAT_LEGEND, revSummary } from '../lib/ui-config'
 
@@ -20,6 +20,29 @@ function cloneFloorsConfig(floorsConfig) {
         }))
       : [{ id: `r${fi + 1}-1`, name: 'Main Hall', seats: [], cols: 20, rows: 14, px: 5, py: 10, pw: 38, ph: 42 }],
   }))
+}
+
+const toM = t => { const [h,m] = t.split(':').map(Number); return h*60+(m||0) }
+
+function parseRange(open, close) {
+  let openM = toM(open), closeM = toM(close)
+  if (closeM <= openM) closeM += 24*60
+  return { openM, closeM, totalM: closeM - openM }
+}
+
+function buildDefaultShifts(open, close, durations) {
+  const { openM, closeM, totalM } = parseRange(open, close)
+  if (!durations.length || totalM <= 0) return [{ start: open, end: close }]
+  const nonZero = durations.filter(d => d > 0)
+  if (!nonZero.length) return [{ start: open, end: close }]
+  const dur = Math.min(...nonZero)
+  const segM = dur * 60
+  const count = Math.floor(totalM / segM)
+  const slots = []
+  for (let i = 0; i < count; i++) slots.push({ start: fmtMins(openM + i*segM), end: fmtMins(openM + (i+1)*segM) })
+  const remM = totalM - count * segM
+  if (remM > 0) slots.push({ start: fmtMins(openM + count*segM), end: fmtMins(closeM) })
+  return slots.length ? slots : [{ start: open, end: close }]
 }
 
 // ── OWNER DASHBOARD ────────────────────────────────────────────
@@ -247,14 +270,23 @@ export function EditLibrary() {
   })
   const [busy,     setBusy]     = useState(false)
   const [uploadingIdx, setUploadingIdx] = useState(null)
+  const [customShifts, setCustomShifts] = useState(() => {
+    if (Array.isArray(lib?.custom_shifts) && lib.custom_shifts.length) return lib.custom_shifts
+    const initOpen  = S.addLibOpen  || lib?.hours_open  || '06:00'
+    const initClose = S.addLibClose || lib?.hours_close || '22:00'
+    const initDurs  = Array.isArray(S.addLibShift) ? S.addLibShift : (lib?.shift_durations || [3])
+    return buildDefaultShifts(initOpen, initClose, initDurs)
+  })
 
   const editorSeatCount = (S.gridFloors || []).reduce((a, fl) => a + fl.rooms.reduce((b, rm) => b + rm.seats.length, 0), 0)
   const totalSeats = editorSeatCount > 0 ? editorSeatCount : (parseInt(lib?.total_seats) || 0)
 
   const toggleShift = h => setShifts(prev => {
     const has = prev.includes(h)
-    if (has) return prev.length > 1 ? prev.filter(x => x !== h) : prev
-    return [...prev, h]
+    if (has && prev.length <= 1) return prev
+    const next = has ? prev.filter(x => x !== h) : [...prev, h]
+    setCustomShifts(buildDefaultShifts(openT, closeT, next))
+    return next
   })
 
   // ── Photo from device / camera ────────────────────────────────
@@ -302,6 +334,7 @@ export function EditLibrary() {
       hours: openT + ' – ' + closeT,
       hours_open: openT, hours_close: closeT,
       shift_durations: shifts, shift_duration: shifts[0] || 3,
+      custom_shifts: customShifts,
       description: desc.trim(),
       maps_url: mapsUrl.trim() || null,
       amenities,
@@ -358,16 +391,16 @@ export function EditLibrary() {
             <div className="form-group">
               <label>Opening Hours *</label>
               <div className="time-picker-wrap">
-                <div className="time-input-group"><label>Opens at</label><input type="time" value={openT} onChange={ev => setOpenT(ev.target.value)} /></div>
-                <div className="time-input-group"><label>Closes at</label><input type="time" value={closeT} onChange={ev => setCloseT(ev.target.value)} /></div>
+                <div className="time-input-group"><label>Opens at</label><input type="time" value={openT} onChange={ev => { setOpenT(ev.target.value); setCustomShifts(buildDefaultShifts(ev.target.value, closeT, shifts)) }} /></div>
+                <div className="time-input-group"><label>Closes at</label><input type="time" value={closeT} onChange={ev => { setCloseT(ev.target.value); setCustomShifts(buildDefaultShifts(openT, ev.target.value, shifts)) }} /></div>
               </div>
               <div className="hours-preview">🕐 {openT} – {closeT}</div>
             </div>
 
             {/* Shift selector */}
             <div className="form-group">
-              <label>Shift Durations *</label>
-              <p className="form-hint mb-10">Select one or more. Students will see all selected options when booking.</p>
+              <label>Shift Slots *</label>
+              <p className="form-hint mb-10">Pick a template to auto-divide the day — then edit the slots below as needed.</p>
               <div className="shift-opts">
                 {SHIFTS.map(s => (
                   <div key={s.h} className={`shift-opt ${shifts.includes(s.h) ? 'on' : ''}`} onClick={() => toggleShift(s.h)}>
@@ -376,7 +409,7 @@ export function EditLibrary() {
                   </div>
                 ))}
               </div>
-              <ShiftTimeline open={openT} close={closeT} shifts={shifts} />
+              <ShiftTimelineEditor open={openT} close={closeT} customShifts={customShifts} setCustomShifts={setCustomShifts} />
             </div>
 
             <div className="form-group">
@@ -434,7 +467,7 @@ export function EditLibrary() {
             {photos.map((url, i) => (
               <div key={i} className="photo-row">
                 {/* Preview */}
-                {url && url.startsWith('blob:') || (url && url.startsWith('http')) ? (
+                {(url?.startsWith('blob:') || url?.startsWith('http')) ? (
                   <img className="photo-preview" src={url} alt="" onError={ev => ev.target.style.opacity='.15'} />
                 ) : (
                   <div className="photo-preview" style={{ display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, color:'var(--muted)' }}>📷</div>
@@ -443,7 +476,7 @@ export function EditLibrary() {
                 {/* URL input */}
                 <input className="form-input" placeholder="Paste URL or upload below →"
                   value={url.startsWith('blob:') ? '(uploaded file)' : url}
-                  readOnly={url.startsWith('blob:')}
+                  readOnly={url?.startsWith('blob:') || false}
                   onChange={ev => { const p=[...photos]; p[i]=ev.target.value; setPhotos(p) }}
                   style={{ flex:1 }} />
 
@@ -493,58 +526,76 @@ export function EditLibrary() {
   )
 }
 
-// ── SHIFT TIMELINE ─────────────────────────────────────────────
-function ShiftTimeline({ open, close, shifts }) {
-  const [oh, om] = open.split(':').map(Number)
-  const [ch, cm] = close.split(':').map(Number)
-  let openM = oh*60+(om||0), closeM = ch*60+(cm||0)
-  if (closeM <= openM) closeM += 24*60
-  const totalM = closeM - openM
-  if (!shifts.length || totalM <= 0) return null
-  const fmtM = m => { m=m%1440; const h=Math.floor(m/60)%24,mm=m%60; return (h<10?'0':'')+h+':'+(mm<10?'0':'')+mm }
+// ── SHIFT TIMELINE EDITOR ──────────────────────────────────────
+function ShiftTimelineEditor({ open, close, customShifts, setCustomShifts }) {
+  const { openM, closeM, totalM } = parseRange(open, close)
   const PALETTE = ['#C8364A','#2A72B5','#1AA882','#C4860A','#7B3FA0']
   const tickCount = Math.min(Math.floor(totalM/60)+1, 13)
+
+  const updateShift = (i, field, val) =>
+    setCustomShifts(customShifts.map((s,j) => j===i ? {...s,[field]:val} : s))
+  const removeShift = i => setCustomShifts(customShifts.filter((_,j) => j!==i))
+  const addShift    = () => {
+    const last = customShifts[customShifts.length-1]
+    setCustomShifts([...customShifts, { start: last?.end || open, end: close }])
+  }
+
+  if (!customShifts.length || totalM <= 0) return null
+
   return (
     <div style={{ marginTop:18 }}>
       <div className="flex items-center gap-8 mb-8">
         <span className="text-xs fw-700 c-muted uppercase tracking-wide">Shift Timeline</span>
-        <span className="text-sm c-hint">{open} – {close}</span>
+        <span className="text-sm c-hint">{open} – {close} · {customShifts.length} slot{customShifts.length!==1?'s':''}</span>
       </div>
+
+      {/* Tick labels */}
       <div className="flex items-center gap-10 mb-4">
-        <div style={{ width:52, flexShrink:0 }} />
+        <div style={{ width:8, flexShrink:0 }} />
         <div style={{ flex:1, position:'relative', height:14 }}>
           {Array.from({length:tickCount},(_,t) => {
             const pct=(t*60/totalM)*100; if(pct>100) return null
-            const hh=(openM+t*60)%1440
-            const lbl=(Math.floor(hh/60)<10?'0':'')+Math.floor(hh/60)+':'+(hh%60<10?'0':'')+(hh%60)
-            return <div key={t} style={{ position:'absolute',left:pct+'%',transform:'translateX(-50%)',fontSize:9,color:'var(--muted)',fontWeight:600,whiteSpace:'nowrap',top:0 }}>{lbl}</div>
+            return <div key={t} style={{ position:'absolute',left:pct+'%',transform:'translateX(-50%)',fontSize:9,color:'var(--muted)',fontWeight:600,whiteSpace:'nowrap',top:0 }}>{fmtMins(openM+t*60)}</div>
           })}
         </div>
-        <div style={{ width:32,flexShrink:0 }} />
       </div>
-      {[...shifts].sort((a,b)=>a-b).map((dur,di) => {
-        const color=PALETTE[di%PALETTE.length]
-        const segM=dur===0?totalM:dur*60
-        const segCount=dur===0?1:Math.floor(totalM/segM)
-        const remPct=((totalM-segCount*segM)/totalM*100).toFixed(2)
-        return (
-          <div key={dur} className="flex items-center gap-10 mb-8">
-            <div style={{ width:52,flexShrink:0,textAlign:'right',fontSize:11,fontWeight:700,color }}>{dur===0?'Full Day':dur+'h'}</div>
-            <div style={{ flex:1,position:'relative',height:28,background:'var(--surface)',borderRadius:6,border:'1px solid var(--border)',overflow:'hidden' }}>
-              {Array.from({length:segCount},(_,i) => {
-                const left=(i*segM/totalM*100).toFixed(2)
-                const width=(segM/totalM*100).toFixed(2)
-                const sM=openM+i*segM,eM=sM+segM
-                return <div key={i} style={{ position:'absolute',left:left+'%',width:`calc(${width}% - 2px)`,height:'100%',background:color,borderRadius:5,opacity:.82,display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden' }} title={`${fmtM(sM)} – ${fmtM(eM)}`}>
-                  <span style={{ fontSize:9,fontWeight:700,color:'white',opacity:.9,whiteSpace:'nowrap',padding:'0 3px' }}>{fmtM(sM)}–{fmtM(eM)}</span>
-                </div>
-              })}
-              {+remPct>0 && <div style={{ position:'absolute',right:0,width:remPct+'%',height:'100%',background:'rgba(0,0,0,.06)',borderRadius:5,border:'1.5px dashed var(--border)' }} />}
+
+      {/* Visual bar */}
+      <div style={{ position:'relative',height:30,background:'var(--surface)',borderRadius:6,border:'1px solid var(--border)',overflow:'hidden',marginBottom:16 }}>
+        {customShifts.map((s,i) => {
+          const sM = toM(s.start), rawEM = toM(s.end)
+          const eM = rawEM <= sM ? rawEM + 1440 : rawEM
+          const leftPct = ((Math.max(sM,openM)-openM)/totalM*100).toFixed(2)
+          const widthPct = ((Math.min(eM,closeM)-Math.max(sM,openM))/totalM*100).toFixed(2)
+          if (+widthPct <= 0) return null
+          return (
+            <div key={i} style={{ position:'absolute',left:leftPct+'%',width:`calc(${widthPct}% - 2px)`,height:'100%',background:PALETTE[i%PALETTE.length],borderRadius:4,opacity:.85,display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden' }} title={`${s.start} – ${s.end}`}>
+              <span style={{ fontSize:9,fontWeight:700,color:'white',whiteSpace:'nowrap',padding:'0 3px' }}>{s.start}–{s.end}</span>
             </div>
-            <div style={{ width:32,flexShrink:0,fontSize:10,color:'var(--mutedl)' }}>×{segCount}</div>
+          )
+        })}
+      </div>
+
+      {/* Editable slot list */}
+      <div style={{ background:'var(--surface)',borderRadius:10,border:'1px solid var(--border)',padding:'12px 14px' }}>
+        <div style={{ fontSize:11,fontWeight:700,color:'var(--mutedl)',marginBottom:10,textTransform:'uppercase',letterSpacing:.5 }}>Edit Slots</div>
+        {customShifts.map((s,i) => (
+          <div key={i} className="flex items-center gap-8 mb-8">
+            <div style={{ width:16,height:16,borderRadius:4,background:PALETTE[i%PALETTE.length],flexShrink:0,opacity:.85 }} />
+            <span style={{ fontSize:11,color:'var(--mutedl)',fontWeight:700,flexShrink:0,minWidth:20 }}>#{i+1}</span>
+            <input type="time" value={s.start} onChange={ev => updateShift(i,'start',ev.target.value)}
+              style={{ background:'var(--card)',border:'1px solid var(--border)',borderRadius:7,padding:'5px 10px',fontSize:13,color:'var(--text)',fontFamily:'inherit',cursor:'pointer' }} />
+            <span style={{ color:'var(--muted)',fontSize:13,flexShrink:0 }}>–</span>
+            <input type="time" value={s.end} onChange={ev => updateShift(i,'end',ev.target.value)}
+              style={{ background:'var(--card)',border:'1px solid var(--border)',borderRadius:7,padding:'5px 10px',fontSize:13,color:'var(--text)',fontFamily:'inherit',cursor:'pointer' }} />
+            {customShifts.length > 1 && (
+              <button type="button" onClick={() => removeShift(i)}
+                style={{ background:'none',border:'none',color:'var(--muted)',cursor:'pointer',fontSize:16,lineHeight:1,padding:'0 2px',flexShrink:0 }}>✕</button>
+            )}
           </div>
-        )
-      })}
+        ))}
+        <button type="button" className="btn-ghost-sm" style={{ fontSize:11,padding:'5px 12px',marginTop:4 }} onClick={addShift}>+ Add Slot</button>
+      </div>
     </div>
   )
 }
